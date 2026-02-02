@@ -1,0 +1,629 @@
+<template>
+  <div class="chat-container">
+    <!-- 侧边栏：对话历史 -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h3>对话历史</h3>
+        <el-button type="primary" size="small" @click="createNewChat">
+          <el-icon><Plus /></el-icon>
+          新建对话
+        </el-button>
+      </div>
+      <div class="sidebar-content">
+        <div
+          v-for="conv in conversations"
+          :key="conv.id"
+          class="conversation-item"
+          :class="{ active: currentConversationId === conv.id }"
+          @click="selectConversation(conv.id)"
+        >
+          <div class="conv-title">{{ conv.title }}</div>
+          <div class="conv-meta">
+            <el-tag size="small" :type="getModeType(conv.mode)">
+              {{ getModeName(conv.mode) }}
+            </el-tag>
+            <el-button
+              type="danger"
+              size="small"
+              text
+              @click.stop="deleteConversation(conv.id)"
+            >
+              <el-icon><Delete /></el-icon>
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主聊天区域 -->
+    <div class="chat-main">
+      <!-- 顶部：模式切换 -->
+      <div class="chat-header">
+        <div class="mode-switch">
+          <el-radio-group v-model="currentMode" :disabled="!!currentConversationId">
+            <el-radio-button label="normal">普通对话</el-radio-button>
+            <el-radio-button label="data_analysis" :disabled="!isLoggedIn">数据分析</el-radio-button>
+            <el-radio-button label="code_review" :disabled="!isLoggedIn">研发质量</el-radio-button>
+          </el-radio-group>
+        </div>
+        <div class="user-info">
+          <el-dropdown v-if="userStore.user">
+            <span class="username">
+              {{ userStore.user.username }}
+              <el-tag v-if="userStore.user.role === 'admin'" size="small" type="warning">管理员</el-tag>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-if="userStore.user.role === 'admin'" @click="$router.push('/users')">用户管理</el-dropdown-item>
+                <el-dropdown-item v-if="userStore.user.role === 'admin'" @click="$router.push('/settings')">配置管理</el-dropdown-item>
+                <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </div>
+
+      <!-- 消息显示区域 -->
+      <div class="messages-container" ref="messagesContainer">
+        <div v-if="messages.length === 0" class="empty-state">
+          <el-empty description="开始一个新对话吧" />
+        </div>
+        <div v-else class="messages-list">
+          <div
+            v-for="msg in messages"
+            :key="msg.id"
+            class="message"
+            :class="msg.role"
+          >
+            <div class="message-avatar">
+              <el-icon v-if="msg.role === 'user'"><User /></el-icon>
+              <el-icon v-else><ChatDotSquare /></el-icon>
+            </div>
+            <div class="message-content">
+              <div class="message-role">{{ msg.role === 'user' ? '你' : 'AI助手' }}</div>
+              <MarkdownRenderer :content="msg.content" />
+            </div>
+          </div>
+        </div>
+        
+        <!-- 加载中提示 -->
+        <div v-if="loading" class="message assistant loading">
+          <div class="message-avatar">
+            <el-icon><ChatDotSquare /></el-icon>
+          </div>
+          <div class="message-content">
+            <el-icon class="is-loading"><Loading /></el-icon>
+            <span>思考中...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 输入区域 -->
+      <div class="input-area">
+        <div class="input-wrapper">
+          <el-input
+            v-model="inputMessage"
+            type="textarea"
+            :rows="3"
+            placeholder="输入消息... (@选择对象，#快捷模板)"
+            @input="handleInput"
+            @keydown="handleKeyDown"
+            :disabled="loading"
+          />
+          <div class="input-actions">
+            <el-button
+              type="primary"
+              @click="sendMessage"
+              :loading="loading"
+              :disabled="!inputMessage.trim()"
+            >
+              发送
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- @选择弹框 -->
+    <MentionPicker
+      v-if="mentionVisible"
+      :visible="mentionVisible"
+      :items="mentionItems"
+      :position="mentionPosition"
+      :type="mentionType"
+      @select="handleMentionSelect"
+      @close="mentionVisible = false"
+    />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  Plus,
+  Delete,
+  User,
+  ChatDotSquare,
+  Loading
+} from '@element-plus/icons-vue'
+import { chatStream, getConversations, getMessages, deleteConversation as deleteConv, getGitLabUsers, type ChatRequest } from '@/api/chat'
+import { logout } from '@/api/auth'
+import { useUserStore } from '@/store/user'
+import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
+import MentionPicker from '@/components/MentionPicker.vue'
+import type { Conversation, Message, StreamResponse, GitLabUser } from '@/types'
+
+const router = useRouter()
+const userStore = useUserStore()
+
+const conversations = ref<Conversation[]>([])
+const messages = ref<Message[]>([])
+const currentConversationId = ref<number | null>(null)
+const currentMode = ref<'normal' | 'data_analysis' | 'code_review'>('normal')
+const inputMessage = ref('')
+const loading = ref(false)
+const messagesContainer = ref<HTMLElement>()
+
+// @选择相关
+const mentionVisible = ref(false)
+const mentionPosition = ref({ x: 0, y: 0 })
+const mentionType = ref<'user' | 'database' | 'table'>('user')
+const mentionItems = ref<any[]>([])
+const cursorPosition = ref(0)
+const inputEl = ref<HTMLInputElement>()
+
+const isLoggedIn = computed(() => !!userStore.user)
+
+onMounted(async () => {
+  await loadConversations()
+})
+
+const loadConversations = async () => {
+  try {
+    const data = await getConversations()
+    conversations.value = data
+  } catch (error) {
+    ElMessage.error('加载对话列表失败')
+  }
+}
+
+const loadMessages = async (conversationId: number) => {
+  try {
+    const data = await getMessages(conversationId)
+    messages.value = data
+    scrollToBottom()
+  } catch (error) {
+    ElMessage.error('加载消息失败')
+  }
+}
+
+const createNewChat = () => {
+  currentConversationId.value = null
+  messages.value = []
+  inputMessage.value = ''
+}
+
+const selectConversation = async (id: number) => {
+  currentConversationId.value = id
+  await loadMessages(id)
+  const conv = conversations.value.find(c => c.id === id)
+  if (conv) {
+    currentMode.value = conv.mode
+  }
+}
+
+const deleteConversation = async (id: number) => {
+  try {
+    await ElMessageBox.confirm('确定要删除这个对话吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    await deleteConv(id)
+    if (currentConversationId.value === id) {
+      createNewChat()
+    }
+    await loadConversations()
+    ElMessage.success('删除成功')
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('删除失败')
+    }
+  }
+}
+
+const sendMessage = async () => {
+  const message = inputMessage.value.trim()
+  if (!message) return
+
+  inputMessage.value = ''
+  loading.value = true
+
+  try {
+    // 生成消息ID
+    const userMessageId = Date.now()
+    const aiMessageId = Date.now() + 1
+    
+    // 先添加用户消息到界面
+    messages.value.push({
+      id: userMessageId,
+      conversation_id: currentConversationId.value || -1,
+      role: 'user',
+      content: message,
+      created_at: new Date().toISOString()
+    })
+
+    // 添加空的AI消息占位
+    messages.value.push({
+      id: aiMessageId,
+      conversation_id: currentConversationId.value || -1,
+      role: 'assistant',
+      content: '',
+      created_at: new Date().toISOString()
+    })
+
+    scrollToBottom()
+
+    // 准备请求
+    const chatData: ChatRequest = {
+      message,
+      mode: currentMode.value,
+      conversation_id: currentConversationId.value
+    }
+
+    let fullResponse = ''
+    let newConversationId: number | null = null
+
+    await chatStream(
+      chatData,
+      (response: StreamResponse) => {
+        if (response.type === 'conversation_id') {
+          newConversationId = response.id
+          currentConversationId.value = response.id
+        } else if (response.type === 'chunk') {
+          fullResponse += response.content
+          // 更新AI消息内容
+          const aiMsg = messages.value.find(m => m.id === aiMessageId)
+          if (aiMsg) {
+            aiMsg.content = fullResponse
+            scrollToBottom()
+          }
+        } else if (response.type === 'done') {
+          loading.value = false
+          if (newConversationId) {
+            // 更新新消息的conversation_id
+            const userMsg = messages.value.find(m => m.id === userMessageId)
+            const aiMsg = messages.value.find(m => m.id === aiMessageId)
+            if (userMsg) userMsg.conversation_id = newConversationId
+            if (aiMsg) aiMsg.conversation_id = newConversationId
+            loadConversations()
+          }
+        }
+      },
+      (error) => {
+        console.error('流式对话出错:', error)
+        ElMessage.error(error.message || '发送失败')
+        loading.value = false
+        // 移除未完成的AI消息
+        const aiMsgIndex = messages.value.findIndex(m => m.id === aiMessageId)
+        if (aiMsgIndex !== -1) {
+          messages.value.splice(aiMsgIndex, 1)
+        }
+      }
+    )
+
+  } catch (error: any) {
+    console.error('发送消息失败:', error)
+    ElMessage.error(error.message || '发送失败')
+    loading.value = false
+  }
+}
+
+const handleInput = async (value: string) => {
+  // 检测@符号
+  const atMatch = value.lastIndexOf('@', cursorPosition.value - 1)
+  if (atMatch !== -1 && (atMatch === 0 || value[atMatch - 1] === ' ')) {
+    const textAfterAt = value.slice(atMatch + 1)
+    if (!textAfterAt.includes(' ')) {
+      // 显示@选择框
+      const textarea = document.querySelector('.el-textarea__inner') as HTMLTextAreaElement
+      if (textarea) {
+        const rect = textarea.getBoundingClientRect()
+        const text = textarea.value.substring(0, cursorPosition.value)
+        const lines = text.split('\n')
+        const line = lines.length
+        const char = lines[lines.length - 1].length
+        
+        mentionPosition.value = {
+          x: rect.left + char * 8 + 20,
+          y: rect.top + line * 24 + 60
+        }
+      }
+
+      // 根据模式@选择不同的内容
+      if (currentMode.value === 'data_analysis') {
+        mentionType.value = 'database'
+        mentionItems.value = [
+          { id: 1, name: 'dispe123nsing数据库', type: 'database', description: '中药代煎数据库' }
+        ]
+      } else if (currentMode.value === 'code_review' && isLoggedIn.value) {
+        mentionType.value = 'user'
+        try {
+          const users = await getGitLabUsers()
+          mentionItems.value = users.map((u: GitLabUser) => ({
+            id: u.id,
+            name: u.name || u.username,
+            type: 'user',
+            avatar_url: u.avatar_url,
+            description: `本周提交: ${u.commits_week} 次`
+          }))
+        } catch (error) {
+          mentionItems.value = []
+        }
+      } else {
+        mentionItems.value = []
+      }
+      
+      mentionVisible.value = true
+    }
+  } else {
+    mentionVisible.value = false
+  }
+}
+
+const handleMentionSelect = (item: any) => {
+  const beforeMention = inputMessage.value.slice(0, inputMessage.value.lastIndexOf('@'))
+  const afterMention = inputMessage.value.slice(cursorPosition.value)
+  
+  let mentionText = ''
+  if (item.type === 'user') {
+    mentionText = `@${item.name} `
+  } else {
+    mentionText = `@${item.name} `
+  }
+  
+  inputMessage.value = beforeMention + mentionText + afterMention
+  mentionVisible.value = false
+  
+  // 聚焦输入框
+  nextTick(() => {
+    const textarea = document.querySelector('.el-textarea__inner') as HTMLTextAreaElement
+    if (textarea) {
+      textarea.focus()
+    }
+  })
+}
+
+const handleKeyDown = (e: KeyboardEvent) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    sendMessage()
+  }
+  cursorPosition.value = (e.target as HTMLTextAreaElement).selectionStart
+}
+
+const scrollToBottom = () => {
+  nextTick(() => {
+    if (messagesContainer.value) {
+      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+    }
+  })
+}
+
+const getModeName = (mode: string) => {
+  const names = {
+    normal: '普通',
+    data_analysis: '数据分析',
+    code_review: '代码审查'
+  }
+  return names[mode] || mode
+}
+
+const getModeType = (mode: string) => {
+  const types = {
+    normal: '',
+    data_analysis: 'success',
+    code_review: 'warning'
+  }
+  return types[mode] || ''
+}
+
+const handleLogout = () => {
+  logout()
+  userStore.logout()
+  router.push('/login')
+}
+</script>
+
+<style scoped>
+.chat-container {
+  display: flex;
+  height: 100vh;
+  background: #f5f7fa;
+}
+
+.sidebar {
+  width: 280px;
+  background: white;
+  border-right: 1px solid #e4e7ed;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-header {
+  padding: 16px;
+  border-bottom: 1px solid #e4e7ed;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sidebar-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #303133;
+}
+
+.sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.conversation-item {
+  padding: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-bottom: 8px;
+  transition: all 0.2s;
+}
+
+.conversation-item:hover {
+  background: #f5f7fa;
+}
+
+.conversation-item.active {
+  background: #ecf5ff;
+  border: 1px solid #d9ecff;
+}
+
+.conv-title {
+  font-size: 14px;
+  color: #303133;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conv-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-header {
+  padding: 16px 24px;
+  background: white;
+  border-bottom: 1px solid #e4e7ed;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.user-info {
+  cursor: pointer;
+}
+
+.username {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #606266;
+}
+
+.messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.empty-state {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.message {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.message.user {
+  flex-direction: row-reverse;
+}
+
+.message-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.message.user .message-avatar {
+  background: #409eff;
+  color: white;
+}
+
+.message.assistant .message-avatar {
+  background: #67c23a;
+  color: white;
+}
+
+.message.loading .message-avatar {
+  background: #909399;
+  color: white;
+}
+
+.message-content {
+  max-width: 70%;
+  background: white;
+  padding: 12px 16px;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.message.user .message-content {
+  background: #409eff;
+  color: white;
+}
+
+.message.loading .message-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #909399;
+}
+
+.message-role {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 8px;
+}
+
+.message.user .message-role {
+  text-align: right;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.input-area {
+  background: white;
+  padding: 16px 24px;
+  border-top: 1px solid #e4e7ed;
+}
+
+.input-wrapper {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.input-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+</style>

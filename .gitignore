@@ -1,0 +1,7 @@
+./backend/.env
+./backend/venv
+./backend/mysql-mcp-server/venv
+./backend/zyk_ai_platform.db
+
+./frontend/node_modules
+
