@@ -83,7 +83,8 @@ API文档：http://localhost:8000/docs
 cd frontend
 
 # 安装依赖
-npm install
+npm install --registry=https://registry.npmmirror.com
+
 
 # 启动开发服务器
 npm run dev

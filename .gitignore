@@ -2,6 +2,7 @@
 ./backend/venv
 ./backend/mysql-mcp-server/venv
 ./backend/zyk_ai_platform.db
-
+*.pyc
 ./frontend/node_modules
+frontend/node_modules/
 

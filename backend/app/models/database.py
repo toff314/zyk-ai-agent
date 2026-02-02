@@ -26,12 +26,7 @@ engine = create_async_engine(
     connect_args={
         "check_same_thread": False,  # 允许多线程访问
         "timeout": 30  # 30秒锁定超时
-    },
-    # 连接池配置
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,  # 连接前检查连接是否有效
-    pool_recycle=3600,  # 1小时后回收连接
+    }
 )
 
 # 创建异步会话工厂

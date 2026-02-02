@@ -7,7 +7,8 @@ export default defineConfig({
   plugins: [vue()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src')
+      '@': path.resolve(__dirname, './src'),
+      'element-plus': path.resolve(__dirname, './node_modules/element-plus')
     }
   },
   server: {
@@ -19,5 +20,8 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  optimizeDeps: {
+    include: ['element-plus', '@element-plus/icons-vue']
   }
 })
