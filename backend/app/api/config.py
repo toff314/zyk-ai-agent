@@ -272,7 +272,53 @@ async def update_mysql_config(
         await safe_commit(db)
         await db.refresh(config)
         
-        return {"code": 0, "message": "MySQL配置更新成功"}
+        # 同步元数据
+        sync_result = {"success": True, "message": "同步成功"}
+        try:
+            from app.api.mysql_metadata import _sync_databases, _sync_tables
+            
+            mysql_config = {
+                "host": config_data.host,
+                "port": config_data.port,
+                "user": config_data.user,
+                "password": config_data.password,
+                "database": config_data.database
+            }
+            
+            logger.info("开始同步MySQL元数据...")
+            
+            # 同步数据库列表
+            databases = await _sync_databases(db, mysql_config)
+            
+            # 过滤掉系统数据库
+            user_db_count = len([d for d in databases if d.get('database') not in ['information_schema', 'performance_schema', 'mysql', 'sys']])
+            
+            # 同步每个数据库的表
+            table_count = 0
+            for db_obj in databases:
+                db_name = db_obj.get("database")
+                if not db_name or db_name in ['information_schema', 'performance_schema', 'mysql', 'sys']:
+                    continue
+                try:
+                    tables = await _sync_tables(db, mysql_config, db_name)
+                    table_count += len(tables)
+                except Exception as e:
+                    logger.warning(f"同步数据库 {db_name} 的表失败: {e}")
+            
+            sync_result["message"] = f"同步成功: {user_db_count} 个数据库, {table_count} 个表"
+            logger.info(f"同步完成: {user_db_count} 个数据库, {table_count} 个表")
+        except Exception as sync_error:
+            logger.error(f"同步MySQL元数据失败: {str(sync_error)}", exc_info=True)
+            sync_result = {
+                "success": False,
+                "message": f"同步失败: {str(sync_error)}"
+            }
+        
+        return {
+            "code": 1 if not sync_result["success"] else 0,
+            "message": "MySQL配置更新成功",
+            "sync": sync_result
+        }
         
     except Exception as e:
         await db.rollback()
@@ -349,6 +395,80 @@ async def test_model_config(
         }
     except Exception as e:
         logger.error(f"测试模型配置失败: {str(e)}", exc_info=True)
+        return {
+            "code": -1,
+            "message": f"测试失败: {str(e)}",
+            "error_detail": str(e)
+        }
+
+
+@router.post("/test/mysql")
+async def test_mysql_config(
+    config_data: MySQLConfigRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    测试MySQL配置连接
+    
+    参数:
+        config_data: MySQL配置数据
+        current_user: 当前登录用户
+        db: 数据库会话
+    
+    返回:
+        dict: 测试结果
+    """
+    # 只有管理员可以测试配置
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有管理员可以测试配置"
+        )
+    
+    try:
+        from app.services.mcp_mysql import MCPMySQLClient
+        
+        mysql_config = {
+            "host": config_data.host,
+            "port": config_data.port,
+            "user": config_data.user,
+            "password": config_data.password,
+            "database": config_data.database
+        }
+        
+        logger.info(f"开始测试MySQL配置: {config_data.host}:{config_data.port}")
+        
+        # 尝试连接并查询数据库列表
+        client = MCPMySQLClient()
+        databases = await client.list_databases(mysql_config)
+        
+        logger.info(f"MySQL连接成功，找到 {len(databases)} 个数据库")
+
+        table_count = 0
+        for db_info in databases:
+            db_name = db_info.get("database") or db_info.get("Database")
+            if not db_name:
+                continue
+            logger.info(f"数据库: {db_name}")
+            tables = await client.list_tables(db_name, mysql_config)
+            table_count += len(tables)
+            logger.info(f"数据库 {db_name}: {len(tables)} 个表")
+        
+        logger.info(f"共 {table_count} 个表")
+        
+        
+        return {
+            "code": 0,
+            "message": "MySQL连接测试成功",
+            "data": {
+                "database_count": len(databases),
+                "table_count": table_count
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"测试MySQL配置失败: {str(e)}", exc_info=True)
         return {
             "code": -1,
             "message": f"测试失败: {str(e)}",

@@ -2,7 +2,7 @@
 应用配置设置
 使用 Pydantic Settings 管理配置
 """
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 import os
 from pathlib import Path
@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     """应用配置类"""
     
     # 数据库配置
-    DATABASE_URL: str = "sqlite+aiosqlite:///./app.db"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./zyk_ai_platform.db"
     
     # MySQL配置
     MYSQL_HOST: str = "localhost"
@@ -49,13 +49,29 @@ class Settings(BaseSettings):
     # API配置
     API_PREFIX: str = "/api/v1"
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore"
+    )
 
 
 # 创建全局配置实例
 settings = Settings()
+
+
+def _normalize_sqlite_url(url: str) -> str:
+    prefix = "sqlite+aiosqlite:///"
+    if not url.startswith(prefix):
+        return url
+    path = url[len(prefix):]
+    if path.startswith("/"):
+        return url
+    backend_root = Path(__file__).resolve().parents[2]
+    return f"{prefix}{(backend_root / path).as_posix()}"
+
+
+settings.DATABASE_URL = _normalize_sqlite_url(settings.DATABASE_URL)
 
 # 确保上传目录存在
 Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)

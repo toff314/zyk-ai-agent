@@ -82,6 +82,8 @@ async def init_db():
         from app.models.message import Message
         from app.models.gitlab_user import GitLabUser
         from app.models.config import Config
+        from app.models.mysql_database import MySQLDatabase
+        from app.models.mysql_table import MySQLTable
         
         # 创建所有表
         await conn.run_sync(Base.metadata.create_all)

@@ -109,9 +109,38 @@ class DataAnalysisAgent(AgentService):
         async def execute_mysql_query(query: str) -> str:
             """执行MySQL查询"""
             try:
-                results = await mcp_mysql_client.execute_query(query)
-                return self._format_results(results)
+                from sqlalchemy.ext.asyncio import AsyncSession
+                from app.models.database import get_db
+                from app.models.config import Config
+                from sqlalchemy import select
+                import json
+                
+                # 异步获取数据库会话和MySQL配置
+                db_gen = get_db()
+                db = await db_gen.__anext__()
+                
+                try:
+                    # 获取MySQL配置
+                    result = await db.execute(select(Config).where(Config.key == "mysql_config"))
+                    config = result.scalar_one_or_none()
+                    if not config:
+                        return "错误：未配置MySQL连接信息"
+                    
+                    mysql_config = json.loads(config.value)
+                    if not mysql_config.get("enabled"):
+                        return "错误：MySQL未启用"
+                    
+                    # 使用MCP MySQL客户端执行查询，传递配置参数
+                    results = await mcp_mysql_client.execute_query(query, mysql_config=mysql_config)
+                    return self._format_results(results)
+                finally:
+                    try:
+                        await db_gen.aclose()
+                    except:
+                        pass
             except Exception as e:
+                import traceback
+                logger.error(f"执行MySQL查询失败: {str(e)}\n{traceback.format_exc()}")
                 return f"查询失败: {str(e)}"
         
         # 系统提示词
@@ -263,9 +292,9 @@ class ChatAgent(AgentService):
         async def browse_web(query_or_url: str) -> str:
             """浏览网页或搜索关键词"""
             try:
-                # 在线程池中运行同步的curl调用
+                # 在线程池中运行同步的 Playwright 调用，避免阻塞事件循环
                 import asyncio
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 return await loop.run_in_executor(None, mcp_browser_client.browse, query_or_url)
             except Exception as e:
                 return f"浏览失败: {str(e)}"

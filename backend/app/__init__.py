@@ -3,7 +3,7 @@
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, users, conversations, chat, config
+from app.api import auth, users, conversations, chat, config, mysql_metadata
 from app.models.database import init_db, safe_commit
 from app.utils.security import get_password_hash
 from app.models.user import User
@@ -38,6 +38,7 @@ app.include_router(users.router)
 app.include_router(conversations.router)
 app.include_router(chat.router)
 app.include_router(config.router)
+app.include_router(mysql_metadata.router)
 
 
 @app.on_event("startup")

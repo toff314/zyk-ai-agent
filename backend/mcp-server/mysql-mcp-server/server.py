@@ -32,19 +32,44 @@ class MySQLConnection:
     def __init__(self):
         self.connection = None
     
-    def connect(self):
-        """建立数据库连接"""
+    def connect(self, use_database=None):
+        """建立数据库连接
+        
+        参数:
+            use_database: 指定要连接的数据库，如果为None则不指定默认数据库
+        """
         if self.connection is None:
-            self.connection = pymysql.connect(
-                host=os.getenv('MYSQL_HOST', 'localhost'),
-                port=int(os.getenv('MYSQL_PORT', 3306)),
-                user=os.getenv('MYSQL_USER', 'root'),
-                password=os.getenv('MYSQL_PASSWORD', ''),
-                database=os.getenv('MYSQL_DATABASE'),
-                charset=os.getenv('MYSQL_CHARSET', 'utf8mb4'),
-                cursorclass=DictCursor
-            )
+            # 构建连接参数
+            connect_kwargs = {
+                'host': os.getenv('MYSQL_HOST', 'localhost'),
+                'port': int(os.getenv('MYSQL_PORT', 3306)),
+                'user': os.getenv('MYSQL_USER', 'root'),
+                'password': os.getenv('MYSQL_PASSWORD', ''),
+                'charset': os.getenv('MYSQL_CHARSET', 'utf8mb4'),
+                'cursorclass': DictCursor
+            }
+            
+            # 只有在显式指定时才设置database参数
+            if use_database:
+                connect_kwargs['database'] = use_database
+            else:
+                # 否则使用环境变量中的值（可能是空字符串）
+                db_from_env = os.getenv('MYSQL_DATABASE')
+                if db_from_env:
+                    connect_kwargs['database'] = db_from_env
+            
+            self.connection = pymysql.connect(**connect_kwargs)
         return self.connection
+    
+    def ensure_database(self, database_name):
+        """确保当前连接使用指定的数据库"""
+        if database_name and (not self.connection or self.connection.db != database_name):
+            # 如果连接不在指定数据库，关闭重新连接
+            if self.connection:
+                self.connection.close()
+                self.connection = None
+            return self.connect(use_database=database_name)
+        return self.connect()
     
     def disconnect(self):
         """关闭数据库连接"""
@@ -74,6 +99,12 @@ def execute_query(sql: str) -> List[Dict[str, Any]]:
     conn = db.connect()
     try:
         with conn.cursor() as cursor:
+            # 如果SQL中没有指定数据库名且连接了数据库，先使用该数据库
+            current_db = os.getenv('MYSQL_DATABASE')
+            if current_db and not any(keyword in sql.upper() for keyword in ['FROM `', 'FROM ', 'UPDATE ', 'INSERT INTO ', 'DELETE FROM ']):
+                # 简单的表名查询，添加数据库名前缀
+                cursor.execute(f"USE `{current_db}`")
+            
             cursor.execute(sql)
             result = cursor.fetchall()
             return result
@@ -89,14 +120,22 @@ def list_databases() -> List[Dict[str, Any]]:
     返回:
         数据库列表，每个数据库包含名称等信息
     """
-    sql = "SHOW DATABASES"
-    conn = db.connect()
+    # 使用不指定database的连接
+    if db.connection:
+        db.connection.close()
+        db.connection = None
+    
+    conn = db.connect(use_database=None)
     try:
         with conn.cursor() as cursor:
-            cursor.execute(sql)
+            cursor.execute("SHOW DATABASES")
             result = cursor.fetchall()
-            # 将结果转换为更友好的格式
-            return [{"database": row.get('Database', row.get('database', ''))} for row in result]
+            # 将结果转换为更友好的格式，并过滤系统数据库
+            all_dbs = [{"database": row.get('Database', row.get('database', ''))} for row in result]
+            # 过滤掉系统数据库
+            system_dbs = ['information_schema', 'performance_schema', 'mysql', 'sys']
+            user_dbs = [db for db in all_dbs if db['database'] not in system_dbs]
+            return user_dbs
     except Exception as e:
         raise Exception(f"获取数据库列表失败: {str(e)}")
 
