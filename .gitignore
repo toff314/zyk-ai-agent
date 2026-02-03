@@ -2,7 +2,18 @@
 ./backend/venv
 ./backend/mysql-mcp-server/venv
 ./backend/zyk_ai_platform.db
-*.pyc
+
+
+backend/app/__pycache__/
+backend/app/api/__pycache__/
+backend/app/config/__pycache__/
+backend/app/middleware/__pycache__/
+backend/app/models/__pycache__/
+backend/app/services/__pycache__/
+backend/app/utils/__pycache__/
+
 ./frontend/node_modules
 frontend/node_modules/
+
+*.pyc
 
