@@ -22,6 +22,11 @@ export interface MySQLConfig {
   database: string
 }
 
+export interface SyncResult {
+  success: boolean
+  message: string
+}
+
 export interface AppConfig {
   model_config?: ModelConfig
   gitlab_config?: GitLabConfig
@@ -62,4 +67,18 @@ export async function updateMySQLConfig(config: MySQLConfig): Promise<void> {
  */
 export async function testModelConfig(config: ModelConfig): Promise<{ code: number; message: string; data?: { response: string } }> {
   return request.post('/config/test/model', config)
+}
+
+/**
+ * 测试MySQL配置
+ */
+export async function testMySQLConfig(config: MySQLConfig): Promise<{ code: number; message: string; data?: { database_count: number } }> {
+  return request.post('/config/test/mysql', config)
+}
+
+/**
+ * 更新MySQL配置（带返回类型）
+ */
+export async function updateMySQLConfigWithSync(config: MySQLConfig): Promise<{ code: number; message: string; sync?: SyncResult }> {
+  return request.put('/config/mysql', config)
 }

@@ -133,11 +133,20 @@ import {
   ChatDotSquare,
   Loading
 } from '@element-plus/icons-vue'
-import { chatStream, getConversations, getMessages, deleteConversation as deleteConv, getGitLabUsers, type ChatRequest } from '@/api/chat'
+import {
+  chatStream,
+  getConversations,
+  getMessages,
+  deleteConversation as deleteConv,
+  getGitLabUsers,
+  getMysqlDatabases,
+  getMysqlTables,
+  type ChatRequest
+} from '@/api/chat'
 import { useUserStore } from '@/store/user'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import MentionPicker from '@/components/MentionPicker.vue'
-import type { Conversation, Message, StreamResponse, GitLabUser } from '@/types'
+import type { Conversation, Message, StreamResponse, GitLabUser, MysqlDatabase, MysqlTable } from '@/types'
 
 const userStore = useUserStore()
 
@@ -156,6 +165,9 @@ const mentionType = ref<'user' | 'database' | 'table'>('user')
 const mentionItems = ref<any[]>([])
 const cursorPosition = ref(0)
 const inputEl = ref<HTMLInputElement>()
+const mysqlDatabases = ref<MysqlDatabase[]>([])
+const mysqlTables = ref<Record<string, MysqlTable[]>>({})
+const selectedDatabase = ref<string | null>(null)
 
 const isLoggedIn = computed(() => !!userStore.user)
 
@@ -327,10 +339,48 @@ const handleInput = async (value: string) => {
 
       // 根据模式@选择不同的内容
       if (currentMode.value === 'data_analysis') {
-        mentionType.value = 'database'
-        mentionItems.value = [
-          { id: 1, name: 'dispe123nsing数据库', type: 'database', description: '中药代煎数据库' }
-        ]
+        if (selectedDatabase.value) {
+          const databaseName = selectedDatabase.value
+          mentionType.value = 'table'
+          if (!mysqlTables.value[databaseName]) {
+            try {
+              const tables = await getMysqlTables(databaseName)
+              mysqlTables.value = { ...mysqlTables.value, [databaseName]: tables }
+            } catch (error) {
+              mysqlTables.value = { ...mysqlTables.value, [databaseName]: [] }
+            }
+          }
+          const tables = mysqlTables.value[databaseName] || []
+          const tableItems = tables.map((table: MysqlTable) => ({
+            id: `${databaseName}.${table.name}`,
+            name: table.name,
+            type: 'table',
+            description: table.comment || table.type || databaseName
+          }))
+          mentionItems.value = [
+            {
+              id: '__reset_db__',
+              name: '切换数据库',
+              type: 'database',
+              description: `当前: ${databaseName}`
+            },
+            ...tableItems
+          ]
+        } else {
+          mentionType.value = 'database'
+          if (mysqlDatabases.value.length === 0) {
+            try {
+              mysqlDatabases.value = await getMysqlDatabases()
+            } catch (error) {
+              mysqlDatabases.value = []
+            }
+          }
+          mentionItems.value = mysqlDatabases.value.map((db: MysqlDatabase) => ({
+            id: db.name,
+            name: db.name,
+            type: 'database'
+          }))
+        }
       } else if (currentMode.value === 'code_review' && isLoggedIn.value) {
         mentionType.value = 'user'
         try {
@@ -361,11 +411,15 @@ const handleMentionSelect = (item: any) => {
   const afterMention = inputMessage.value.slice(cursorPosition.value)
   
   let mentionText = ''
-  if (item.type === 'user') {
-    mentionText = `@${item.name} `
-  } else {
-    mentionText = `@${item.name} `
+  if (item.type === 'database') {
+    if (item.id === '__reset_db__') {
+      selectedDatabase.value = null
+      mentionVisible.value = false
+      return
+    }
+    selectedDatabase.value = item.name
   }
+  mentionText = `@${item.name} `
   
   inputMessage.value = beforeMention + mentionText + afterMention
   mentionVisible.value = false

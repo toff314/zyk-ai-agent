@@ -19,7 +19,7 @@
               <el-input v-model="modelConfig.model" placeholder="gpt-3.5-turbo" />
             </el-form-item>
             <el-form-item>
-              <el-button type="primary" @click="testModelConfig" :loading="testing">测试连接</el-button>
+              <el-button type="primary" @click="handleTestModelConfig" :loading="testing">测试连接</el-button>
               <el-button type="success" @click="saveModelConfig" :loading="saving">保存配置</el-button>
             </el-form-item>
           </el-form>
@@ -59,6 +59,7 @@
               <el-input v-model="mysqlConfig.database" placeholder="database_name" />
             </el-form-item>
             <el-form-item>
+              <el-button type="primary" @click="handleTestMysqlConfig" :loading="testingMysql">测试连接</el-button>
               <el-button type="success" @click="saveMysqlConfig" :loading="saving">保存配置</el-button>
             </el-form-item>
           </el-form>
@@ -71,11 +72,21 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { getConfig, updateModelConfig, updateMySQLConfig, testModelConfig, type ModelConfig, type MySQLConfig } from '@/api/config'
+import { 
+  getConfig, 
+  updateModelConfig, 
+  updateMySQLConfigWithSync, 
+  testModelConfig as apiTestModelConfig,
+  testMySQLConfig,
+  type ModelConfig, 
+  type MySQLConfig,
+  type SyncResult
+} from '@/api/config'
 
 const activeTab = ref('model')
 const saving = ref(false)
 const testing = ref(false)
+const testingMysql = ref(false)
 
 const modelFormRef = ref<FormInstance>()
 const gitlabFormRef = ref<FormInstance>()
@@ -143,10 +154,10 @@ const loadConfig = async () => {
   }
 }
 
-const testModelConfig = async () => {
+const handleTestModelConfig = async () => {
   testing.value = true
   try {
-    const result = await testModelConfig(modelConfig)
+    const result = await apiTestModelConfig(modelConfig)
     if (result.code === 0) {
       ElMessage.success('模型配置测试成功')
     } else {
@@ -190,11 +201,36 @@ const saveGitlabConfig = async () => {
   }
 }
 
+const handleTestMysqlConfig = async () => {
+  testingMysql.value = true
+  try {
+    const result = await testMySQLConfig(mysqlConfig)
+    if (result.code === 0) {
+      ElMessage.success('MySQL连接测试成功')
+    } else {
+      ElMessage.error(result.message || '测试失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '测试失败')
+  } finally {
+    testingMysql.value = false
+  }
+}
+
 const saveMysqlConfig = async () => {
   saving.value = true
   try {
-    await updateMySQLConfig(mysqlConfig)
-    ElMessage.success('MySQL配置保存成功')
+    const result = await updateMySQLConfigWithSync(mysqlConfig)
+    
+    if (result.code === 0 && result.sync?.success) {
+      // 保存成功且同步成功
+      ElMessage.success('MySQL配置保存成功，' + result.sync.message)
+    } else if (result.code === 1 && result.sync && !result.sync.success) {
+      // 保存成功但同步失败
+      ElMessage.warning('MySQL配置保存成功，但' + result.sync.message)
+    } else {
+      ElMessage.success('MySQL配置保存成功')
+    }
   } catch (error: any) {
     ElMessage.error(error.message || '保存失败')
   } finally {

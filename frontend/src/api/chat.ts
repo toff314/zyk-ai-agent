@@ -36,6 +36,17 @@ export interface GitLabUser {
   commits_month: number
 }
 
+export interface MysqlDatabase {
+  name: string
+}
+
+export interface MysqlTable {
+  database: string
+  name: string
+  type?: string
+  comment?: string
+}
+
 /**
  * 流式对话
  */
@@ -126,6 +137,26 @@ export async function deleteConversation(conversationId: number): Promise<void> 
  */
 export async function getGitLabUsers(): Promise<GitLabUser[]> {
   return request.get<GitLabUser[]>('/chat/gitlab/users')
+}
+
+/**
+ * 获取MySQL数据库列表
+ */
+export async function getMysqlDatabases(refresh = false): Promise<MysqlDatabase[]> {
+  const response = await request.get<{ total: number; items: MysqlDatabase[] }>('/mysql/databases', {
+    params: { refresh }
+  })
+  return response.items || []
+}
+
+/**
+ * 获取MySQL表列表
+ */
+export async function getMysqlTables(database: string, refresh = false): Promise<MysqlTable[]> {
+  const response = await request.get<{ total: number; items: MysqlTable[] }>('/mysql/tables', {
+    params: { database, refresh }
+  })
+  return response.items || []
 }
 
 /**

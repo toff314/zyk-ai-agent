@@ -157,6 +157,7 @@ zyk-ai-agent/
 - **AI模型配置**：API Key、API URL、Model ID
 - **MySQL连接配置**：数据库主机、端口、用户名、密码、数据库名
 - **GitLab配置**：GitLab地址、访问令牌
+- **浏览器配置**：Playwright 浏览器（用于网页浏览）
 
 配置通过Web界面管理，支持实时更新。
 
@@ -185,7 +186,11 @@ source venv/bin/activate  # Linux/Mac
 venv\Scripts\activate  # Windows
 
 # 3. 安装Python依赖
-pip install -r requirements.txt -i https://pypi.org/simple
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 3.1 安装 Playwright 浏览器（用于网页浏览能力）
+python -m playwright install
+
 
 # 4. 启动后端服务
 python main.py
