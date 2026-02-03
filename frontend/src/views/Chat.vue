@@ -46,21 +46,7 @@
             <el-radio-button label="code_review" :disabled="!isLoggedIn">研发质量</el-radio-button>
           </el-radio-group>
         </div>
-        <div class="user-info">
-          <el-dropdown v-if="userStore.user">
-            <span class="username">
-              {{ userStore.user.username }}
-              <el-tag v-if="userStore.user.role === 'admin'" size="small" type="warning">管理员</el-tag>
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item v-if="userStore.user.role === 'admin'" @click="$router.push('/users')">用户管理</el-dropdown-item>
-                <el-dropdown-item v-if="userStore.user.role === 'admin'" @click="$router.push('/settings')">配置管理</el-dropdown-item>
-                <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
+        <div class="chat-hint">选择模式后开始对话</div>
       </div>
 
       <!-- 消息显示区域 -->
@@ -139,7 +125,6 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Plus,
@@ -149,13 +134,11 @@ import {
   Loading
 } from '@element-plus/icons-vue'
 import { chatStream, getConversations, getMessages, deleteConversation as deleteConv, getGitLabUsers, type ChatRequest } from '@/api/chat'
-import { logout } from '@/api/auth'
 import { useUserStore } from '@/store/user'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import MentionPicker from '@/components/MentionPicker.vue'
 import type { Conversation, Message, StreamResponse, GitLabUser } from '@/types'
 
-const router = useRouter()
 const userStore = useUserStore()
 
 const conversations = ref<Conversation[]>([])
@@ -430,17 +413,13 @@ const getModeType = (mode: string) => {
   return types[mode] || ''
 }
 
-const handleLogout = () => {
-  logout()
-  userStore.logout()
-  router.push('/login')
-}
 </script>
 
 <style scoped>
 .chat-container {
   display: flex;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   background: #f5f7fa;
 }
 
@@ -508,6 +487,7 @@ const handleLogout = () => {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .chat-header {
@@ -519,22 +499,16 @@ const handleLogout = () => {
   align-items: center;
 }
 
-.user-info {
-  cursor: pointer;
-}
-
-.username {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: #606266;
+.chat-hint {
+  font-size: 13px;
+  color: #909399;
 }
 
 .messages-container {
   flex: 1;
   overflow-y: auto;
   padding: 24px;
+  min-height: 0;
 }
 
 .empty-state {

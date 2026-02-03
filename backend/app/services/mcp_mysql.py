@@ -13,7 +13,8 @@ class MCPMySQLClient:
     
     def __init__(self):
         """初始化客户端"""
-        self.server_path = "/home/yuanwu/mysql-mcp-server/server.py"
+        # 修正 MCP Server 路径（相对于当前工作目录）
+        self.server_path = "backend/mcp-server/mysql-mcp-server/server.py"
         self.env = {
             "MYSQL_HOST": settings.MYSQL_HOST,
             "MYSQL_PORT": str(settings.MYSQL_PORT),
@@ -89,12 +90,12 @@ class MCPMySQLClient:
         """
         query = """
         SELECT 
-            hospital_name,
+            institution_name,
             COUNT(*) as total_orders,
-            SUM(total_amount) as total_amount,
+            SUM(`total_price`) as total_amount,
             COUNT(DISTINCT patient_id) as patient_count
-        FROM orders
-        GROUP BY hospital_name
+        FROM order_info
+        GROUP BY institution_name
         ORDER BY total_orders DESC
         """
         return await self.execute_query(query)
@@ -108,13 +109,12 @@ class MCPMySQLClient:
         """
         query = """
         SELECT 
-            medicine_name,
+            drug_name,
             SUM(quantity) as total_quantity,
-            SUM(quantity * unit_price) as total_cost,
+            SUM(quantity * sale_price) as total_cost,
             COUNT(DISTINCT order_id) as order_count
-        FROM order_medicines
-        JOIN orders ON order_medicines.order_id = orders.id
-        GROUP BY medicine_name
+        FROM order_item
+        GROUP BY drug_name
         ORDER BY total_quantity DESC
         LIMIT 20
         """
@@ -132,12 +132,12 @@ class MCPMySQLClient:
         """
         query = f"""
         SELECT 
-            DATE(created_at) as date,
+            DATE(create_time) as date,
             COUNT(*) as order_count,
-            SUM(total_amount) as total_amount
-        FROM orders
-        WHERE created_at >= DATE('now', '-{days} days')
-        GROUP BY DATE(created_at)
+            SUM(`total_price`) as total_amount
+        FROM order_info
+        WHERE create_time >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+        GROUP BY DATE(create_time)
         ORDER BY date ASC
         """
         return await self.execute_query(query)
@@ -151,12 +151,12 @@ class MCPMySQLClient:
         """
         query = """
         SELECT 
-            employee_name,
+            operator_name,
             COUNT(*) as processed_orders,
-            SUM(total_amount) as total_amount
-        FROM orders
-        WHERE status = 'completed'
-        GROUP BY employee_name
+            SUM(`total_price`) as total_amount
+        FROM order_info
+        WHERE `status` = 3
+        GROUP BY operator_name
         ORDER BY processed_orders DESC
         """
         return await self.execute_query(query)

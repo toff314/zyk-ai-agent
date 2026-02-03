@@ -47,7 +47,7 @@ export async function chatStream(
   const token = localStorage.getItem('token')
   
   try {
-    const response = await fetch('http://localhost:8000/api/v1/chat/stream', {
+    const response = await fetch('/api/v1/chat/stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -103,7 +103,8 @@ export async function chatStream(
  * 获取对话列表
  */
 export async function getConversations(): Promise<Conversation[]> {
-  return request.get<Conversation[]>('/conversations')
+  const response = await request.get<{ total: number; items: Conversation[] }>('/conversations')
+  return response.items || []
 }
 
 /**

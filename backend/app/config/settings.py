@@ -17,8 +17,8 @@ class Settings(BaseSettings):
     # MySQL配置
     MYSQL_HOST: str = "localhost"
     MYSQL_PORT: int = 3306
-    MYSQL_USER: str = ""
-    MYSQL_PASSWORD: str = ""
+    MYSQL_USER: str = "root"
+    MYSQL_PASSWORD: str = "yuanpai00!"
     MYSQL_DATABASE: str = ""
     
     # JWT配置
@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     # GitLab配置
     GITLAB_URL: str = ""
     GITLAB_TOKEN: str = ""
+
+    # 浏览器MCP配置（默认使用官方 Playwright MCP Server）
+    BROWSER_MCP_COMMAND: str = "npx -y @playwright/mcp@latest"
+    BROWSER_MCP_TIMEOUT: int = 60
     
     # 日志配置
     LOG_LEVEL: str = "INFO"

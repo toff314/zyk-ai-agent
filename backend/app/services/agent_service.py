@@ -6,7 +6,9 @@ from langchain_openai import ChatOpenAI
 from typing import Optional, Dict, Any
 import logging
 from .mcp_mysql import mcp_mysql_client
+from .mcp_browser import mcp_browser_client
 from .gitlab import gitlab_service
+from app.agents.prompts import CHAT_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -257,25 +259,18 @@ class ChatAgent(AgentService):
             model=model_config.get("model", "gpt-3.5-turbo"),
             temperature=0.7
         )
-        
-        # 系统提示词
-        system_prompt = """
-        你是一个乐于助人的AI助手，可以回答各种问题。
 
-        ## 你的能力
-        - 回答用户的各种问题
-        - 提供信息和帮助
-        - 进行通用对话
-        - 使用浏览器工具搜索最新信息（如果需要）
+        async def browse_web(query_or_url: str) -> str:
+            """浏览网页或搜索关键词"""
+            try:
+                # 在线程池中运行同步的curl调用
+                import asyncio
+                loop = asyncio.get_event_loop()
+                return await loop.run_in_executor(None, mcp_browser_client.browse, query_or_url)
+            except Exception as e:
+                return f"浏览失败: {str(e)}"
 
-        ## 回答要求
-        1. 准确、友好、有帮助
-        2. 使用清晰简洁的语言
-        3. 如果不确定，坦诚告知
-        4. 尊重用户隐私
-        """
-        
-        await super().initialize(system_prompt, [])
+        await super().initialize(CHAT_PROMPT, [browse_web])
 
 
 # Agent工厂
