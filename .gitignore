@@ -16,4 +16,5 @@ backend/app/utils/__pycache__/
 frontend/node_modules/
 
 *.pyc
-
+zyk_ai_platform.db
+.worktrees/
