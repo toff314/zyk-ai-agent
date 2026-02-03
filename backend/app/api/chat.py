@@ -37,6 +37,62 @@ class ChatResponse(BaseModel):
     error: Optional[str] = None
 
 
+AT_TOKEN_PATTERN = re.compile(r'@([A-Za-z0-9_]+)')
+
+
+def _clean_message_remove_at_tokens(message: str) -> str:
+    cleaned = AT_TOKEN_PATTERN.sub("", message)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def _build_db_table_context(tokens: list[str]) -> dict:
+    pairs: list[tuple[str, Optional[str]]] = []
+    i = 0
+    while i < len(tokens):
+        database = tokens[i]
+        table = tokens[i + 1] if i + 1 < len(tokens) else None
+        pairs.append((database, table))
+        i += 2 if table else 1
+
+    db_to_tables: dict[str, list[str]] = {}
+    db_order: list[str] = []
+    table_order: list[str] = []
+
+    for database, table in pairs:
+        if database not in db_to_tables:
+            db_to_tables[database] = []
+            db_order.append(database)
+        if table:
+            if table not in db_to_tables[database]:
+                db_to_tables[database].append(table)
+            if table not in table_order:
+                table_order.append(table)
+
+    return {
+        "databases": db_order,
+        "tables": table_order,
+        "mapping": db_to_tables,
+    }
+
+
+def _parse_db_table_mentions(message: str) -> tuple[Optional[dict], str]:
+    tokens = [match.group(1) for match in AT_TOKEN_PATTERN.finditer(message)]
+    if not tokens:
+        return None, message
+
+    context = _build_db_table_context(tokens)
+    cleaned_message = _clean_message_remove_at_tokens(message)
+    return context, cleaned_message
+
+
+def _build_db_table_prompt(context: dict, user_message: str) -> str:
+    payload = json.dumps(context, ensure_ascii=False)
+    if not user_message:
+        user_message = "请根据上述数据库/表信息完成用户请求。"
+    return f"[DB_TABLE_CONTEXT]\n{payload}\n[/DB_TABLE_CONTEXT]\n\n用户问题：{user_message}"
+
+
 async def process_message(message: str, mode: str, db: AsyncSession) -> str:
     """
     处理消息并返回响应
@@ -59,6 +115,12 @@ async def process_message(message: str, mode: str, db: AsyncSession) -> str:
         
         model_config = json.loads(config.value)
         
+        # 解析 @ 库/表，仅在数据分析模式生效
+        if mode == "data_analysis":
+            context, cleaned_message = _parse_db_table_mentions(message)
+            if context:
+                message = _build_db_table_prompt(context, cleaned_message)
+
         # 创建并使用Agent
         agent = await AgentFactory.create_agent(mode, model_config)
         response = await agent.query(message)

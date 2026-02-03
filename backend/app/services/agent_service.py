@@ -164,6 +164,19 @@ class DataAnalysisAgent(AgentService):
         4. 提供可操作的业务建议
         5. 语言简洁专业，易于理解
 
+        ## 额外上下文（可选）
+        系统可能会在用户问题前追加以下结构：
+        [DB_TABLE_CONTEXT]
+        {"databases":["db1"],"tables":["t1","t2"],"mapping":{"db1":["t1","t2"]}}
+        [/DB_TABLE_CONTEXT]
+
+        使用要求：
+        - databases/tables 来自 @ 解析，名称保持原样，不要做规范化或改写
+        - 如果提供了 database 和 tables，优先使用全限定名（`db`.`table`）生成 SQL
+        - 如果只提供了 database 而没有 tables，先查询该库的表结构或表列表再继续分析
+        - 查询表结构时优先使用 DESCRIBE 或 SHOW CREATE TABLE
+        - 不要臆造不存在的库或表
+
         ## 主要表结构（参考）
         - orders（订单表）：包含医院、药品、时间等信息
         - medicines（药品表）：药品信息
