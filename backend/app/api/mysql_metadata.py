@@ -1,15 +1,17 @@
 """
 MySQL 元数据API
 """
-import pymysql
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, func
 from app.models.database import get_db, safe_commit
 from app.models.config import Config
 from app.models.mysql_database import MySQLDatabase
 from app.models.mysql_table import MySQLTable
 from app.middleware.auth import get_current_user
+from app.services.mysql_sync import sync_mysql_databases, sync_mysql_tables
+from app.utils.validation import normalize_remark
+from app.utils.pagination import paginate_query, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 import json
 import logging
 
@@ -33,85 +35,26 @@ async def _load_mysql_config(db: AsyncSession) -> dict:
     return mysql_config
 
 
-def _get_mysql_connection(mysql_config: dict):
-    """创建MySQL连接（不指定默认数据库，以便查询所有数据库）"""
-    return pymysql.connect(
-        host=mysql_config.get("host"),
-        port=mysql_config.get("port", 3306),
-        user=mysql_config.get("user"),
-        password=mysql_config.get("password"),
-        charset="utf8mb4",
-        cursorclass=pymysql.cursors.DictCursor
-    )
-
-
 async def _sync_databases(db: AsyncSession, mysql_config: dict) -> list[dict]:
     """同步MySQL数据库列表"""
-    conn = _get_mysql_connection(mysql_config)
-    databases = []
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("SHOW DATABASES")
-            result = cursor.fetchall()
-            databases = [{"database": row.get('Database', '')} for row in result]
-            logger.info(f"从MySQL获取到 {len(databases)} 个数据库")
-    finally:
-        conn.close()
-    
-    # 保存到本地数据库
-    await db.execute(delete(MySQLDatabase))
-    for item in databases:
-        name = item.get("database") or item.get("Database")
-        if not name or name in ['information_schema', 'performance_schema', 'mysql', 'sys']:
-            continue
-        db.add(MySQLDatabase(name=name))
-    await safe_commit(db)
-    
-    logger.info(f"同步 {len([d for d in databases if d.get('database') not in ['information_schema', 'performance_schema', 'mysql', 'sys']])} 个用户数据库到本地")
+    databases = await sync_mysql_databases(db, mysql_config)
+    logger.info("同步MySQL数据库完成: %s", len(databases))
     return databases
 
 
 async def _sync_tables(db: AsyncSession, mysql_config: dict, database: str) -> list[dict]:
     """同步指定数据库的表列表"""
-    conn = _get_mysql_connection(mysql_config)
-    tables = []
-    try:
-        with conn.cursor() as cursor:
-            sql = f"SELECT TABLE_NAME, TABLE_TYPE, TABLE_COMMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = '{database}'"
-            cursor.execute(sql)
-            result = cursor.fetchall()
-            tables = [
-                {
-                    "table_name": row.get('TABLE_NAME', ''),
-                    "table_type": row.get('TABLE_TYPE', ''),
-                    "table_comment": row.get('TABLE_COMMENT', '')
-                }
-                for row in result
-            ]
-            logger.info(f"从MySQL数据库 {database} 获取到 {len(tables)} 个表")
-    finally:
-        conn.close()
-    
-    # 保存到本地数据库
-    await db.execute(delete(MySQLTable).where(MySQLTable.database_name == database))
-    for item in tables:
-        db.add(
-            MySQLTable(
-                database_name=database,
-                table_name=item.get("table_name") or "",
-                table_type=item.get("table_type") or "",
-                table_comment=item.get("table_comment") or "",
-            )
-        )
-    await safe_commit(db)
-    
-    logger.info(f"同步 {len(tables)} 个表到本地数据库: {database}")
+    tables = await sync_mysql_tables(db, mysql_config, database)
+    logger.info("同步MySQL表完成: %s (%s)", database, len(tables))
     return tables
 
 
 @router.get("/databases")
 async def list_mysql_databases(
     refresh: bool = Query(False),
+    include_disabled: bool = Query(False),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
@@ -123,17 +66,29 @@ async def list_mysql_databases(
     if refresh:
         await _sync_databases(db, mysql_config)
 
-    result = await db.execute(select(MySQLDatabase).order_by(MySQLDatabase.name.asc()))
-    items = result.scalars().all()
+    query = select(MySQLDatabase).order_by(MySQLDatabase.name.asc())
+    if not include_disabled:
+        query = query.where(MySQLDatabase.enabled.is_(True))
 
-    if not items:
+    total, items = await paginate_query(db, query, page, page_size)
+
+    if not items and total == 0:
         await _sync_databases(db, mysql_config)
-        result = await db.execute(select(MySQLDatabase).order_by(MySQLDatabase.name.asc()))
-        items = result.scalars().all()
+        total, items = await paginate_query(db, query, page, page_size)
 
     return {
-        "total": len(items),
-        "items": [{"name": item.name} for item in items]
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "items": [
+            {
+                "id": item.id,
+                "name": item.name,
+                "remark": item.remark,
+                "enabled": item.enabled,
+            }
+            for item in items
+        ],
     }
 
 
@@ -141,6 +96,9 @@ async def list_mysql_databases(
 async def list_mysql_tables(
     database: str = Query(..., min_length=1),
     refresh: bool = Query(False),
+    include_disabled: bool = Query(False),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
@@ -152,31 +110,182 @@ async def list_mysql_tables(
     if refresh:
         await _sync_tables(db, mysql_config, database)
 
-    result = await db.execute(
+    query = (
         select(MySQLTable)
         .where(MySQLTable.database_name == database)
         .order_by(MySQLTable.table_name.asc())
     )
-    items = result.scalars().all()
+    if not include_disabled:
+        query = query.where(MySQLTable.enabled.is_(True))
 
-    if not items:
+    total, items = await paginate_query(db, query, page, page_size)
+
+    if not items and total == 0:
         await _sync_tables(db, mysql_config, database)
-        result = await db.execute(
-            select(MySQLTable)
-            .where(MySQLTable.database_name == database)
-            .order_by(MySQLTable.table_name.asc())
-        )
-        items = result.scalars().all()
+        total, items = await paginate_query(db, query, page, page_size)
 
     return {
-        "total": len(items),
+        "total": total,
+        "page": page,
+        "page_size": page_size,
         "items": [
             {
+                "id": item.id,
                 "database": item.database_name,
                 "name": item.table_name,
                 "type": item.table_type,
-                "comment": item.table_comment
+                "comment": item.table_comment,
+                "remark": item.remark,
+                "enabled": item.enabled,
             }
             for item in items
         ]
     }
+
+
+@router.get("/manage/databases")
+async def list_mysql_databases_manage(
+    refresh: bool = Query(False),
+    include_disabled: bool = Query(True),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    mysql_config = await _load_mysql_config(db)
+    if refresh:
+        await _sync_databases(db, mysql_config)
+
+    query = select(MySQLDatabase).order_by(MySQLDatabase.name.asc())
+    if not include_disabled:
+        query = query.where(MySQLDatabase.enabled.is_(True))
+
+    total, items = await paginate_query(db, query, page, page_size)
+
+    count_result = await db.execute(
+        select(MySQLTable.database_name, func.count())
+        .group_by(MySQLTable.database_name)
+    )
+    counts = {row[0]: row[1] for row in count_result.all()}
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "items": [
+            {
+                "id": item.id,
+                "name": item.name,
+                "remark": item.remark,
+                "enabled": item.enabled,
+                "table_count": counts.get(item.name, 0),
+            }
+            for item in items
+        ],
+    }
+
+
+@router.get("/manage/tables")
+async def list_mysql_tables_manage(
+    database: str = Query(..., min_length=1),
+    refresh: bool = Query(False),
+    include_disabled: bool = Query(True),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    mysql_config = await _load_mysql_config(db)
+    if refresh:
+        await _sync_tables(db, mysql_config, database)
+
+    query = (
+        select(MySQLTable)
+        .where(MySQLTable.database_name == database)
+        .order_by(MySQLTable.table_name.asc())
+    )
+    if not include_disabled:
+        query = query.where(MySQLTable.enabled.is_(True))
+
+    total, items = await paginate_query(db, query, page, page_size)
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "items": [
+            {
+                "id": item.id,
+                "database": item.database_name,
+                "name": item.table_name,
+                "type": item.table_type,
+                "comment": item.table_comment,
+                "remark": item.remark,
+                "enabled": item.enabled,
+            }
+            for item in items
+        ],
+    }
+
+
+@router.patch("/manage/databases/{database_id}")
+async def update_mysql_database_manage(
+    database_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = await db.execute(select(MySQLDatabase).where(MySQLDatabase.id == database_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="数据库不存在")
+
+    if "enabled" in payload:
+        item.enabled = bool(payload.get("enabled"))
+    if "remark" in payload:
+        try:
+            item.remark = normalize_remark(payload.get("remark"))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    await safe_commit(db)
+    return {"success": True}
+
+
+@router.patch("/manage/tables/{table_id}")
+async def update_mysql_table_manage(
+    table_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = await db.execute(select(MySQLTable).where(MySQLTable.id == table_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="数据表不存在")
+
+    if "enabled" in payload:
+        item.enabled = bool(payload.get("enabled"))
+    if "remark" in payload:
+        try:
+            item.remark = normalize_remark(payload.get("remark"))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    await safe_commit(db)
+    return {"success": True}
+
+
+@router.get("/manage/table-detail")
+async def get_mysql_table_detail(
+    database: str = Query(..., min_length=1),
+    table: str = Query(..., min_length=1),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    mysql_config = await _load_mysql_config(db)
+    from app.services.mcp_mysql import MCPMySQLClient
+
+    client = MCPMySQLClient()
+    columns = await client.describe_table(table, database, mysql_config)
+    return {"columns": columns}
