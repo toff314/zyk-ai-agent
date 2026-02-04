@@ -16,6 +16,7 @@ from app.models.mysql_table import MySQLTable
 from app.models.gitlab_user import GitLabUser
 from app.middleware.auth import get_current_user
 from app.services.agent_service import AgentFactory
+from app.agents.prompts import TEMPLATES_BY_MODE
 import re
 import json
 import logging
@@ -165,6 +166,12 @@ async def _resolve_gitlab_mentions(db: AsyncSession, message: str) -> str:
     from app.utils.gitlab_mentions import normalize_gitlab_mentions
 
     return normalize_gitlab_mentions(message, alias_map)
+
+
+def get_chat_templates_by_mode(mode: str) -> list[dict]:
+    if mode not in TEMPLATES_BY_MODE:
+        raise ValueError(f"无效的对话模式: {mode}")
+    return TEMPLATES_BY_MODE[mode]
 
 
 async def process_message(
@@ -350,6 +357,23 @@ async def chat_stream(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"处理对话失败: {str(e)}"
         )
+
+
+@router.get("/templates")
+async def get_chat_templates(mode: str = "normal"):
+    """
+    获取快捷模板
+
+    参数:
+        mode: 对话模式
+    """
+    try:
+        return get_chat_templates_by_mode(mode)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get("/gitlab/users")
