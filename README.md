@@ -220,7 +220,7 @@ npm install --registry=https://registry.npmmirror.com
 npm run dev
 ```
 
-前端服务将在 **http://localhost:5173** 启动
+前端服务将在 **http://localhost:5174** 启动
 
 ### MCP MySQL Server（可选）
 
