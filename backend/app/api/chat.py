@@ -11,6 +11,9 @@ from app.models.user import User
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.config import Config
+from app.models.mysql_database import MySQLDatabase
+from app.models.mysql_table import MySQLTable
+from app.models.gitlab_user import GitLabUser
 from app.middleware.auth import get_current_user
 from app.services.agent_service import AgentFactory
 import re
@@ -28,6 +31,8 @@ class ChatRequest(BaseModel):
     message: str
     mode: str  # normal, data_analysis, code_review
     conversation_id: Optional[int] = None
+    review_diff: Optional[str] = None
+    review_notice: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -37,7 +42,7 @@ class ChatResponse(BaseModel):
     error: Optional[str] = None
 
 
-AT_TOKEN_PATTERN = re.compile(r'@([A-Za-z0-9_]+)')
+AT_TOKEN_PATTERN = re.compile(r'@([\u4e00-\u9fffA-Za-z0-9_]+)')
 
 
 def _clean_message_remove_at_tokens(message: str) -> str:
@@ -93,7 +98,89 @@ def _build_db_table_prompt(context: dict, user_message: str) -> str:
     return f"[DB_TABLE_CONTEXT]\n{payload}\n[/DB_TABLE_CONTEXT]\n\n用户问题：{user_message}"
 
 
-async def process_message(message: str, mode: str, db: AsyncSession) -> str:
+async def _resolve_db_table_mentions(db: AsyncSession, message: str) -> tuple[Optional[dict], str]:
+    tokens = [match.group(1) for match in AT_TOKEN_PATTERN.finditer(message)]
+    if not tokens:
+        return None, message
+
+    db_rows = (
+        await db.execute(select(MySQLDatabase).where(MySQLDatabase.enabled.is_(True)))
+    ).scalars().all()
+    table_rows = (
+        await db.execute(select(MySQLTable).where(MySQLTable.enabled.is_(True)))
+    ).scalars().all()
+
+    db_alias_map: dict[str, str] = {}
+    for row in db_rows:
+        if row.name:
+            db_alias_map[row.name] = row.name
+        if row.remark:
+            db_alias_map[row.remark] = row.name
+
+    tables_by_db: dict[str, dict[str, str]] = {}
+    for table in table_rows:
+        if table.database_name not in tables_by_db:
+            tables_by_db[table.database_name] = {}
+        if table.table_name:
+            tables_by_db[table.database_name][table.table_name] = table.table_name
+        if table.remark:
+            tables_by_db[table.database_name][table.remark] = table.table_name
+
+    mapped_tokens: list[str] = []
+    current_db: Optional[str] = None
+    for token in tokens:
+        if token in db_alias_map:
+            current_db = db_alias_map[token]
+            mapped_tokens.append(current_db)
+            continue
+        if current_db and token in tables_by_db.get(current_db, {}):
+            mapped_tokens.append(tables_by_db[current_db][token])
+            continue
+
+    if not mapped_tokens:
+        return None, _clean_message_remove_at_tokens(message)
+
+    context = _build_db_table_context(mapped_tokens)
+    cleaned_message = _clean_message_remove_at_tokens(message)
+    return context, cleaned_message
+
+
+async def _resolve_gitlab_mentions(db: AsyncSession, message: str) -> str:
+    tokens = [match.group(1) for match in AT_TOKEN_PATTERN.finditer(message)]
+    if not tokens:
+        return message
+
+    users = (
+        await db.execute(select(GitLabUser).where(GitLabUser.enabled.is_(True)))
+    ).scalars().all()
+    alias_map: dict[str, str] = {}
+    for user in users:
+        if user.username:
+            alias_map[user.username] = user.username
+        if user.name:
+            alias_map[user.name] = user.username
+        if user.remark:
+            alias_map[user.remark] = user.username
+
+    def _replace(match: re.Match) -> str:
+        token = match.group(1)
+        actual = alias_map.get(token)
+        if not actual:
+            return ""
+        return f"@{actual}"
+
+    cleaned = AT_TOKEN_PATTERN.sub(_replace, message)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+async def process_message(
+    message: str,
+    mode: str,
+    db: AsyncSession,
+    review_diff: Optional[str] = None,
+    review_notice: Optional[str] = None,
+) -> str:
     """
     处理消息并返回响应
     
@@ -115,14 +202,21 @@ async def process_message(message: str, mode: str, db: AsyncSession) -> str:
         
         model_config = json.loads(config.value)
         
+        system_prompt = None
+
         # 解析 @ 库/表，仅在数据分析模式生效
         if mode == "data_analysis":
-            context, cleaned_message = _parse_db_table_mentions(message)
+            context, cleaned_message = await _resolve_db_table_mentions(db, message)
             if context:
                 message = _build_db_table_prompt(context, cleaned_message)
+        elif mode == "code_review":
+            message = await _resolve_gitlab_mentions(db, message)
+            if review_diff is not None or review_notice is not None:
+                from app.utils.code_review_prompt import render_code_review_prompt
+                system_prompt = render_code_review_prompt(review_diff or "", review_notice)
 
         # 创建并使用Agent
-        agent = await AgentFactory.create_agent(mode, model_config)
+        agent = await AgentFactory.create_agent(mode, model_config, system_prompt=system_prompt)
         response = await agent.query(message)
         
         return response
@@ -215,7 +309,13 @@ async def chat_stream(
     
     # 处理消息
     try:
-        response_content = await process_message(chat_data.message, chat_data.mode, db)
+        response_content = await process_message(
+            chat_data.message,
+            chat_data.mode,
+            db,
+            review_diff=chat_data.review_diff,
+            review_notice=chat_data.review_notice,
+        )
         
         # 保存AI响应
         ai_message = Message(
@@ -274,14 +374,28 @@ async def get_gitlab_users(
     返回:
         list: GitLab用户列表
     """
-    from app.services.gitlab import gitlab_service
-    
-    if not gitlab_service:
-        return []
-    
     try:
-        users = await gitlab_service.get_all_users(db)
-        return users
+        from app.models.gitlab_user import GitLabUser
+
+        result = await db.execute(
+            select(GitLabUser)
+            .where(GitLabUser.enabled.is_(True))
+            .order_by(GitLabUser.name.asc())
+        )
+        users = result.scalars().all()
+        return [
+            {
+                "id": user.id,
+                "username": user.username,
+                "name": user.name,
+                "avatar_url": user.avatar_url,
+                "remark": user.remark,
+                "enabled": user.enabled,
+                "commits_week": user.commits_week,
+                "commits_month": user.commits_month,
+            }
+            for user in users
+        ]
     except Exception as e:
         logger.error(f"获取GitLab用户失败: {str(e)}")
         return []

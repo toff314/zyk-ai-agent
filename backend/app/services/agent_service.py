@@ -9,6 +9,7 @@ from .mcp_mysql import mcp_mysql_client
 from .mcp_browser import mcp_browser_client
 from .gitlab import gitlab_service
 from app.agents.prompts import CHAT_PROMPT
+from app.utils.code_review_prompt import render_code_review_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +206,7 @@ class DataAnalysisAgent(AgentService):
 class CodeReviewAgent(AgentService):
     """代码审查Agent"""
     
-    async def initialize(self, model_config: Dict[str, Any]):
+    async def initialize(self, model_config: Dict[str, Any], system_prompt: Optional[str] = None):
         """
         初始化代码审查Agent
         
@@ -237,37 +238,9 @@ class CodeReviewAgent(AgentService):
             except Exception as e:
                 return f"获取代码差异失败: {str(e)}"
         
-        # 系统提示词
-        system_prompt = """
-        你是一个资深的代码审查专家，精通多种编程语言和最佳实践。
+        final_prompt = system_prompt or render_code_review_prompt("", "")
 
-        ## 审查维度
-        1. **代码质量**：可读性、可维护性、规范性
-        2. **功能正确性**：逻辑是否正确，边界条件处理
-        3. **性能优化**：是否有性能问题，优化建议
-        4. **安全性**：是否存在安全漏洞
-        5. **测试覆盖**：测试用例是否充分
-
-        ## 审查格式
-        对于每个问题，请按以下格式：
-        - **严重程度**: 高/中/低
-        - **问题描述**: 具体描述问题
-        - **代码位置**: 文件名和行号（如果有）
-        - **建议修改**: 提供改进建议
-
-        ## 回答要求
-        1. 先给出总体评价（优秀/良好/一般/需改进）
-        2. 按严重程度排序列出问题
-        3. 对于优秀代码给予表扬
-        4. 提供具体的修改建议和示例代码
-        5. 语气友好，鼓励改进
-
-        ## 使用工具
-        - 当用户询问某人的提交时，使用"get_user_commits"工具
-        - 当用户提到提交ID时，使用"get_commit_diff"工具获取代码
-        """
-        
-        await super().initialize(system_prompt, [get_user_commits, get_commit_diff])
+        await super().initialize(final_prompt, [get_user_commits, get_commit_diff])
     
     def _format_commits(self, commits: list) -> str:
         """格式化提交记录"""
@@ -320,7 +293,11 @@ class AgentFactory:
     """Agent工厂类"""
     
     @staticmethod
-    async def create_agent(mode: str, model_config: Dict[str, Any]) -> AgentService:
+    async def create_agent(
+        mode: str,
+        model_config: Dict[str, Any],
+        system_prompt: Optional[str] = None
+    ) -> AgentService:
         """
         创建Agent实例
         
@@ -340,5 +317,8 @@ class AgentFactory:
         else:
             raise ValueError(f"不支持的Agent模式: {mode}")
         
-        await agent.initialize(model_config)
+        if mode == "code_review":
+            await agent.initialize(model_config, system_prompt=system_prompt)
+        else:
+            await agent.initialize(model_config)
         return agent
