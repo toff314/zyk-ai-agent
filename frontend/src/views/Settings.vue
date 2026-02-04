@@ -25,22 +25,7 @@
           </el-form>
         </el-tab-pane>
 
-        <!-- GitLab配置 -->
-        <el-tab-pane label="GitLab配置" name="gitlab">
-          <el-form :model="gitlabConfig" :rules="gitlabRules" ref="gitlabFormRef" label-width="120px">
-            <el-form-item label="GitLab地址" prop="url">
-              <el-input v-model="gitlabConfig.url" placeholder="https://gitlab.example.com" />
-            </el-form-item>
-            <el-form-item label="访问令牌" prop="token">
-              <el-input v-model="gitlabConfig.token" type="password" show-password placeholder="请输入GitLab Access Token" />
-            </el-form-item>
-            <el-form-item>
-              <el-button type="success" @click="saveGitlabConfig" :loading="saving">保存配置</el-button>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
-
-        <!-- MySQL配置 -->
+                <!-- MySQL配置 -->
         <el-tab-pane label="MySQL配置" name="mysql">
           <el-form :model="mysqlConfig" :rules="mysqlRules" ref="mysqlFormRef" label-width="120px">
             <el-form-item label="数据库主机" prop="host">
@@ -60,9 +45,40 @@
             </el-form-item>
             <el-form-item>
               <el-button type="primary" @click="handleTestMysqlConfig" :loading="testingMysql">测试连接</el-button>
+              <el-button type="info" @click="handleSyncMysqlData" :loading="syncingMysql">同步数据</el-button>
               <el-button type="success" @click="saveMysqlConfig" :loading="saving">保存配置</el-button>
             </el-form-item>
           </el-form>
+        </el-tab-pane>
+
+        <!-- GitLab配置 -->
+        <el-tab-pane label="GitLab配置" name="gitlab">
+          <el-form :model="gitlabConfig" :rules="gitlabRules" ref="gitlabFormRef" label-width="120px">
+            <el-form-item label="GitLab地址" prop="url">
+              <el-input v-model="gitlabConfig.url" placeholder="https://gitlab.example.com" />
+            </el-form-item>
+            <el-form-item label="访问令牌" prop="token">
+              <el-input v-model="gitlabConfig.token" type="password" show-password placeholder="请输入GitLab Access Token" />
+            </el-form-item>
+            <el-form-item label="Groups" prop="groups">
+              <el-input v-model="gitlabConfig.groups" placeholder="seccloud,team-a" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="handleTestGitlabConfig" :loading="testingGitlab">测试连接</el-button>
+              <el-button type="info" @click="handleSyncGitlabData" :loading="syncingGitlab">同步数据</el-button>
+              <el-button type="success" @click="saveGitlabConfig" :loading="saving">保存配置</el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
+        <!-- MySQL管理 -->
+        <el-tab-pane label="MySQL管理" name="mysql_manage">
+          <MysqlManage />
+        </el-tab-pane>
+
+        <!-- Gitlab管理 -->
+        <el-tab-pane label="Gitlab管理" name="gitlab_manage">
+          <GitlabManage />
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -72,21 +88,30 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { 
-  getConfig, 
-  updateModelConfig, 
-  updateMySQLConfigWithSync, 
+import MysqlManage from '@/components/settings/MysqlManage.vue'
+import GitlabManage from '@/components/settings/GitlabManage.vue'
+import {
+  getConfig,
+  updateModelConfig,
+  updateMySQLConfigWithSync,
+  updateGitLabConfigWithSync,
+  syncMySQLData,
+  syncGitLabData,
   testModelConfig as apiTestModelConfig,
   testMySQLConfig,
-  type ModelConfig, 
+  testGitLabConfig,
+  type ModelConfig,
   type MySQLConfig,
-  type SyncResult
+  type GitLabConfig
 } from '@/api/config'
 
 const activeTab = ref('model')
 const saving = ref(false)
 const testing = ref(false)
 const testingMysql = ref(false)
+const testingGitlab = ref(false)
+const syncingMysql = ref(false)
+const syncingGitlab = ref(false)
 
 const modelFormRef = ref<FormInstance>()
 const gitlabFormRef = ref<FormInstance>()
@@ -98,9 +123,10 @@ const modelConfig = reactive<ModelConfig>({
   model: 'gpt-3.5-turbo'
 })
 
-const gitlabConfig = reactive({
+const gitlabConfig = reactive<GitLabConfig>({
   url: '',
-  token: ''
+  token: '',
+  groups: ''
 })
 
 const mysqlConfig = reactive<MySQLConfig>({
@@ -122,7 +148,8 @@ const modelRules: FormRules = {
 
 const gitlabRules: FormRules = {
   url: [{ required: true, message: '请输入GitLab地址', trigger: 'blur' }],
-  token: [{ required: true, message: '请输入访问令牌', trigger: 'blur' }]
+  token: [{ required: true, message: '请输入访问令牌', trigger: 'blur' }],
+  groups: [{ required: true, message: '请输入Groups', trigger: 'blur' }]
 }
 
 const mysqlRules: FormRules = {
@@ -185,19 +212,53 @@ const saveModelConfig = async () => {
 const saveGitlabConfig = async () => {
   saving.value = true
   try {
-    await fetch('/api/v1/config/gitlab', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
-      body: JSON.stringify(gitlabConfig)
-    })
-    ElMessage.success('GitLab配置保存成功')
+    const result = await updateGitLabConfigWithSync(gitlabConfig)
+
+    if (result.code === 0 && result.sync?.success) {
+      ElMessage.success('GitLab配置保存成功，' + result.sync.message)
+    } else if (result.code === 1 && result.sync && !result.sync.success) {
+      ElMessage.warning('GitLab配置保存成功，但' + result.sync.message)
+    } else {
+      ElMessage.success('GitLab配置保存成功')
+    }
   } catch (error: any) {
     ElMessage.error(error.message || '保存失败')
   } finally {
     saving.value = false
+  }
+}
+
+const handleTestGitlabConfig = async () => {
+  testingGitlab.value = true
+  try {
+    const result = await testGitLabConfig(gitlabConfig)
+    if (result.code === 0) {
+      ElMessage.success('GitLab连接测试成功')
+    } else {
+      ElMessage.error(result.message || '测试失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '测试失败')
+  } finally {
+    testingGitlab.value = false
+  }
+}
+
+const handleSyncGitlabData = async () => {
+  syncingGitlab.value = true
+  try {
+    const result = await syncGitLabData()
+    if (result.code === 0 && result.sync?.success) {
+      ElMessage.success('GitLab同步成功，' + result.sync.message)
+    } else if (result.code === 1 && result.sync && !result.sync.success) {
+      ElMessage.warning('GitLab同步完成，但' + result.sync.message)
+    } else {
+      ElMessage.success('GitLab同步完成')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '同步失败')
+  } finally {
+    syncingGitlab.value = false
   }
 }
 
@@ -214,6 +275,24 @@ const handleTestMysqlConfig = async () => {
     ElMessage.error(error.message || '测试失败')
   } finally {
     testingMysql.value = false
+  }
+}
+
+const handleSyncMysqlData = async () => {
+  syncingMysql.value = true
+  try {
+    const result = await syncMySQLData()
+    if (result.code === 0 && result.sync?.success) {
+      ElMessage.success('MySQL同步成功，' + result.sync.message)
+    } else if (result.code === 1 && result.sync && !result.sync.success) {
+      ElMessage.warning('MySQL同步完成，但' + result.sync.message)
+    } else {
+      ElMessage.success('MySQL同步完成')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '同步失败')
+  } finally {
+    syncingMysql.value = false
   }
 }
 
