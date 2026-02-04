@@ -12,6 +12,7 @@ export interface ModelConfig {
 export interface GitLabConfig {
   url: string
   token: string
+  groups: string
 }
 
 export interface MySQLConfig {
@@ -51,15 +52,10 @@ export async function updateModelConfig(config: ModelConfig): Promise<void> {
 /**
  * 更新GitLab配置
  */
-export async function updateGitLabConfig(config: GitLabConfig): Promise<void> {
+export async function updateGitLabConfigWithSync(
+  config: GitLabConfig
+): Promise<{ code: number; message: string; sync?: SyncResult }> {
   return request.put('/config/gitlab', config)
-}
-
-/**
- * 更新MySQL配置
- */
-export async function updateMySQLConfig(config: MySQLConfig): Promise<void> {
-  return request.put('/config/mysql', config)
 }
 
 /**
@@ -77,8 +73,30 @@ export async function testMySQLConfig(config: MySQLConfig): Promise<{ code: numb
 }
 
 /**
+ * 测试GitLab配置
+ */
+export async function testGitLabConfig(
+  config: GitLabConfig
+): Promise<{ code: number; message: string; data?: { user: { id?: number; username?: string; name?: string } } }> {
+  return request.post('/config/test/gitlab', config)
+}
+/**
  * 更新MySQL配置（带返回类型）
  */
 export async function updateMySQLConfigWithSync(config: MySQLConfig): Promise<{ code: number; message: string; sync?: SyncResult }> {
   return request.put('/config/mysql', config)
+}
+
+/**
+ * 同步GitLab数据
+ */
+export async function syncGitLabData(): Promise<{ code: number; message: string; sync?: SyncResult }> {
+  return request.post('/config/sync/gitlab')
+}
+
+/**
+ * 同步MySQL数据
+ */
+export async function syncMySQLData(): Promise<{ code: number; message: string; sync?: SyncResult }> {
+  return request.post('/config/sync/mysql')
 }
