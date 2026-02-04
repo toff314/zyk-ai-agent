@@ -2,7 +2,7 @@
 配置模型
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, Index
+from sqlalchemy import Column, Integer, String, Text, DateTime
 from app.models.database import Base
 
 

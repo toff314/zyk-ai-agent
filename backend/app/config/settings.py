@@ -3,8 +3,6 @@
 使用 Pydantic Settings 管理配置
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
-import os
 from pathlib import Path
 
 

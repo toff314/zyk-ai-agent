@@ -5,8 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
+from typing import List
 from app.models.database import get_db, safe_commit
 from app.models.conversation import Conversation
 from app.models.message import Message

@@ -8,7 +8,6 @@ from app.models.database import init_db, apply_sqlite_migrations, safe_commit
 from app.utils.security import get_password_hash
 from app.models.user import User
 from app.models.config import Config
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import logging
 
@@ -61,12 +60,12 @@ async def startup_event():
         if not admin:
             admin = User(
                 username="admin",
-                password_hash=get_password_hash("admin123!"),  # 默认密码，生产环境应修改
+                password_hash=get_password_hash("Zykadmin@1234!"),  # 默认密码，生产环境应修改
                 role="admin"
             )
             db.add(admin)
             await safe_commit(db)
-            logger.info("默认管理员用户创建成功 (用户名: admin, 密码: admin123!)")
+            logger.info("默认管理员用户创建成功 (用户名: admin, 密码: Zykadmin@1234!)")
         else:
             logger.info("管理员用户已存在")
         

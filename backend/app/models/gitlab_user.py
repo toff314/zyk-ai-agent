@@ -2,7 +2,7 @@
 GitLab用户模型
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Index, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Boolean
 from app.models.database import Base
 
 

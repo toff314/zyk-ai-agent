@@ -2,7 +2,7 @@
 用户模型
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Index
+from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.orm import relationship
 from app.models.database import Base
 
