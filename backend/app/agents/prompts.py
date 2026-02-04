@@ -385,3 +385,84 @@ CHAT_PROMPT = """
 4. 尊重用户隐私
 5. 当用户明确要求“浏览网页/查看链接/查最新信息”时，优先调用 browse_web 工具
 """
+
+CHAT_TEMPLATES = [
+    {
+        "id": "normal_summary",
+        "name": "总结要点",
+        "description": "把问题拆成要点并给出结论",
+        "content": "请帮我总结以下内容的核心要点，并给出结论：",
+    },
+    {
+        "id": "normal_plan",
+        "name": "行动清单",
+        "description": "输出可执行的步骤清单",
+        "content": "请为以下目标提供一份可执行的步骤清单：",
+    },
+    {
+        "id": "normal_explain",
+        "name": "通俗解释",
+        "description": "用简洁语言解释概念",
+        "content": "请用通俗易懂的方式解释这个概念，并给出一个例子：",
+    },
+]
+
+DATA_ANALYSIS_TEMPLATES = [
+    {
+        "id": "da_hospital_orders_trend",
+        "name": "医院订单总量与趋势",
+        "description": "统计医院订单总量并给出趋势",
+        "content": "统计近30天各医院订单总量、日趋势，并给出Top10医院。",
+    },
+    {
+        "id": "da_region_orders_share",
+        "name": "区县订单占比与趋势",
+        "description": "按区县统计订单量及趋势变化",
+        "content": "按区县统计订单量与占比，给出近30天趋势变化。",
+    },
+    {
+        "id": "da_employee_workload",
+        "name": "员工工作量统计",
+        "description": "分析员工操作量与效率",
+        "content": "统计员工操作量与效率分布，找出工作负荷最高的员工并给出建议。",
+    },
+    {
+        "id": "da_exception_by_hospital",
+        "name": "异常订单分布",
+        "description": "分析异常类型与医院分布",
+        "content": "统计异常订单类型与医院分布，并给出改进建议。",
+    },
+    {
+        "id": "da_drug_usage_trend",
+        "name": "药品消耗与趋势",
+        "description": "统计药品消耗总量与趋势",
+        "content": "统计近30天药品消耗总量及趋势，并列出消耗最高的药品。",
+    },
+]
+
+CODE_REVIEW_TEMPLATES = [
+    {
+        "id": "cr_project_quality_summary",
+        "name": "项目代码质量总结",
+        "description": "评估最近提交质量与主要问题",
+        "content": "分析项目【项目名】最近30天提交质量，列出主要问题类型并给出改进建议。",
+    },
+    {
+        "id": "cr_project_commit_trend",
+        "name": "提交数量趋势",
+        "description": "统计提交数量与主要提交人",
+        "content": "统计项目【项目名】最近30天提交数量趋势与主要提交人。",
+    },
+    {
+        "id": "cr_branch_recent_commits",
+        "name": "分支提交概览",
+        "description": "分析分支最近提交质量",
+        "content": "对分支【分支名】最近N次提交做质量总结，并标出高风险问题。",
+    },
+]
+
+TEMPLATES_BY_MODE = {
+    "normal": CHAT_TEMPLATES,
+    "data_analysis": DATA_ANALYSIS_TEMPLATES,
+    "code_review": CODE_REVIEW_TEMPLATES,
+}

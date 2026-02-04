@@ -11,3 +11,10 @@ def test_data_analysis_prompt_includes_table_context_instructions():
 def test_code_review_prompt_includes_gitlab_tools():
     assert "get_user_commits" in prompts.CODE_REVIEW_PROMPT
     assert "get_commit_diff" in prompts.CODE_REVIEW_PROMPT
+
+
+def test_chat_templates_exist():
+    assert isinstance(prompts.CHAT_TEMPLATES, list)
+    assert isinstance(prompts.DATA_ANALYSIS_TEMPLATES, list)
+    assert isinstance(prompts.CODE_REVIEW_TEMPLATES, list)
+    assert "data_analysis" in prompts.TEMPLATES_BY_MODE
