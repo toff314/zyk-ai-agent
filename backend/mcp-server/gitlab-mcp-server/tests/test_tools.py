@@ -63,6 +63,14 @@ class StubUsers:
         return self._users
 
 
+class StubEvents:
+    def __init__(self, events):
+        self._events = events
+
+    def list(self, **_kwargs):
+        return self._events
+
+
 class StubGL:
     def __init__(self, groups, users):
         self.groups = StubGroups(groups)
@@ -191,12 +199,20 @@ def test_list_projects_uses_groups(monkeypatch):
 
 
 def test_list_users(monkeypatch):
+    monkeypatch.setenv("GITLAB_NOW", "2024-01-10T12:00:00+00:00")
     users = [
         StubUser(10, "Alice", "alice", "active"),
         StubUser(11, "Bob", "bob", "blocked"),
     ]
     users[0].avatar_url = "https://gitlab/avatar"
     users[1].avatar_url = None
+    users[0].events = StubEvents(
+        [
+            {"created_at": "2024-01-09T10:00:00+00:00", "push_data": {"commit_count": 3}},
+            {"created_at": "2024-01-02T09:00:00+00:00", "push_data": {"commit_count": 2}},
+        ]
+    )
+    users[1].events = StubEvents([])
     gl = StubGL(groups=[], users=users)
 
     def _stub_connect():
@@ -212,6 +228,8 @@ def test_list_users(monkeypatch):
             "username": "alice",
             "state": "active",
             "avatar_url": "https://gitlab/avatar",
+            "commits_week": 3,
+            "commits_month": 5,
         },
         {
             "id": 11,
@@ -219,6 +237,8 @@ def test_list_users(monkeypatch):
             "username": "bob",
             "state": "blocked",
             "avatar_url": None,
+            "commits_week": 0,
+            "commits_month": 0,
         },
     ]
 
