@@ -5,7 +5,10 @@ export function replaceTriggerText(
   replacement: string
 ): string {
   const before = value.slice(0, triggerIndex)
-  const after = value.slice(cursorIndex)
+  let after = value.slice(cursorIndex)
   const normalized = replacement.endsWith(' ') ? replacement : `${replacement} `
+  if (normalized.endsWith(' ') && after.startsWith(' ')) {
+    after = after.slice(1)
+  }
   return `${before}${normalized}${after}`.trimEnd()
 }
