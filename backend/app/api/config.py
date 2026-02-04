@@ -5,11 +5,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
 from app.models.database import get_db, safe_commit
 from app.models.user import User
 from app.models.config import Config
 from app.middleware.auth import get_current_user
+from app.services.gitlab_sync import (
+    sync_gitlab_users,
+    sync_gitlab_projects,
+    sync_all_gitlab_branches,
+)
+from app.services.mysql_sync import sync_mysql_metadata
+from app.services.gitlab_validation import validate_gitlab_token, validate_gitlab_groups
 import json
 import logging
 
@@ -30,6 +36,7 @@ class GitLabConfigRequest(BaseModel):
     """GitLab配置请求"""
     url: str
     token: str
+    groups: str
 
 
 class MySQLConfigRequest(BaseModel):
@@ -186,9 +193,11 @@ async def update_gitlab_config(
         )
         config = result.scalar_one_or_none()
         
+        normalized_groups = validate_gitlab_groups(config_data.groups)
         config_value = {
             "url": config_data.url,
-            "token": config_data.token
+            "token": config_data.token,
+            "groups": normalized_groups,
         }
         
         if config:
@@ -204,8 +213,38 @@ async def update_gitlab_config(
         
         await safe_commit(db)
         await db.refresh(config)
-        
-        return {"code": 0, "message": "GitLab配置更新成功"}
+
+        sync_result = {"success": True, "message": "同步成功"}
+        try:
+            user_result = await sync_gitlab_users(
+                db,
+                {"url": config_data.url, "token": config_data.token, "groups": normalized_groups},
+            )
+            project_result = await sync_gitlab_projects(
+                db,
+                {"url": config_data.url, "token": config_data.token, "groups": normalized_groups},
+            )
+            branch_result = await sync_all_gitlab_branches(
+                db,
+                {"url": config_data.url, "token": config_data.token, "groups": normalized_groups},
+            )
+            sync_result["message"] = (
+                f"同步成功: {user_result['user_count']} 个用户, "
+                f"{project_result['project_count']} 个仓库, "
+                f"{branch_result['branch_count']} 个分支"
+            )
+        except Exception as sync_error:
+            logger.error(f"同步GitLab数据失败: {str(sync_error)}", exc_info=True)
+            sync_result = {
+                "success": False,
+                "message": f"同步失败: {str(sync_error)}",
+            }
+
+        return {
+            "code": 1 if not sync_result["success"] else 0,
+            "message": "GitLab配置更新成功",
+            "sync": sync_result,
+        }
         
     except Exception as e:
         await db.rollback()
@@ -272,47 +311,24 @@ async def update_mysql_config(
         await safe_commit(db)
         await db.refresh(config)
         
-        # 同步元数据
         sync_result = {"success": True, "message": "同步成功"}
+        mysql_config = {
+            "host": config_data.host,
+            "port": config_data.port,
+            "user": config_data.user,
+            "password": config_data.password,
+            "database": config_data.database,
+        }
         try:
-            from app.api.mysql_metadata import _sync_databases, _sync_tables
-            
-            mysql_config = {
-                "host": config_data.host,
-                "port": config_data.port,
-                "user": config_data.user,
-                "password": config_data.password,
-                "database": config_data.database
-            }
-            
-            logger.info("开始同步MySQL元数据...")
-            
-            # 同步数据库列表
-            databases = await _sync_databases(db, mysql_config)
-            
-            # 过滤掉系统数据库
-            user_db_count = len([d for d in databases if d.get('database') not in ['information_schema', 'performance_schema', 'mysql', 'sys']])
-            
-            # 同步每个数据库的表
-            table_count = 0
-            for db_obj in databases:
-                db_name = db_obj.get("database")
-                if not db_name or db_name in ['information_schema', 'performance_schema', 'mysql', 'sys']:
-                    continue
-                try:
-                    tables = await _sync_tables(db, mysql_config, db_name)
-                    table_count += len(tables)
-                except Exception as e:
-                    logger.warning(f"同步数据库 {db_name} 的表失败: {e}")
-            
-            sync_result["message"] = f"同步成功: {user_db_count} 个数据库, {table_count} 个表"
-            logger.info(f"同步完成: {user_db_count} 个数据库, {table_count} 个表")
+            logger.info("开始同步MySQL元数据(MCP)...")
+            result = await sync_mysql_metadata(db, mysql_config)
+            sync_result["message"] = (
+                f"同步成功: {result['database_count']} 个数据库, {result['table_count']} 个表"
+            )
+            logger.info(sync_result["message"])
         except Exception as sync_error:
             logger.error(f"同步MySQL元数据失败: {str(sync_error)}", exc_info=True)
-            sync_result = {
-                "success": False,
-                "message": f"同步失败: {str(sync_error)}"
-            }
+            sync_result = {"success": False, "message": f"同步失败: {str(sync_error)}"}
         
         return {
             "code": 1 if not sync_result["success"] else 0,
@@ -327,6 +343,98 @@ async def update_mysql_config(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"更新MySQL配置失败: {str(e)}"
         )
+
+
+@router.post("/sync/gitlab")
+async def sync_gitlab_data(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有管理员可以同步配置"
+        )
+
+    result = await db.execute(select(Config).where(Config.key == "gitlab_config"))
+    config = result.scalar_one_or_none()
+    if not config:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先配置GitLab连接信息")
+
+    try:
+        config_value = json.loads(config.value)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="GitLab配置解析失败")
+
+    normalized_groups = validate_gitlab_groups(config_value.get("groups") or "")
+    gitlab_config = {
+        "url": config_value.get("url"),
+        "token": config_value.get("token"),
+        "groups": normalized_groups,
+    }
+    if not gitlab_config["url"] or not gitlab_config["token"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先配置GitLab连接信息")
+
+    sync_result = {"success": True, "message": "同步成功"}
+    try:
+        user_result = await sync_gitlab_users(db, gitlab_config)
+        project_result = await sync_gitlab_projects(db, gitlab_config)
+        branch_result = await sync_all_gitlab_branches(db, gitlab_config)
+        sync_result["message"] = (
+            f"同步成功: {user_result['user_count']} 个用户, "
+            f"{project_result['project_count']} 个仓库, "
+            f"{branch_result['branch_count']} 个分支"
+        )
+    except Exception as sync_error:
+        logger.error(f"同步GitLab数据失败: {str(sync_error)}", exc_info=True)
+        sync_result = {"success": False, "message": f"同步失败: {str(sync_error)}"}
+
+    return {
+        "code": 1 if not sync_result["success"] else 0,
+        "message": "GitLab同步完成",
+        "sync": sync_result,
+    }
+
+
+@router.post("/sync/mysql")
+async def sync_mysql_data(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有管理员可以同步配置"
+        )
+
+    result = await db.execute(select(Config).where(Config.key == "mysql_config"))
+    config = result.scalar_one_or_none()
+    if not config:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先配置MySQL连接信息")
+
+    try:
+        config_value = json.loads(config.value)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="MySQL配置解析失败")
+
+    if not config_value.get("enabled"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="MySQL未启用")
+
+    sync_result = {"success": True, "message": "同步成功"}
+    try:
+        result = await sync_mysql_metadata(db, config_value)
+        sync_result["message"] = (
+            f"同步成功: {result['database_count']} 个数据库, {result['table_count']} 个表"
+        )
+    except Exception as sync_error:
+        logger.error(f"同步MySQL元数据失败: {str(sync_error)}", exc_info=True)
+        sync_result = {"success": False, "message": f"同步失败: {str(sync_error)}"}
+
+    return {
+        "code": 1 if not sync_result["success"] else 0,
+        "message": "MySQL同步完成",
+        "sync": sync_result,
+    }
 
 
 @router.post("/test/model")
@@ -395,6 +503,40 @@ async def test_model_config(
         }
     except Exception as e:
         logger.error(f"测试模型配置失败: {str(e)}", exc_info=True)
+        return {
+            "code": -1,
+            "message": f"测试失败: {str(e)}",
+            "error_detail": str(e)
+        }
+
+
+@router.post("/test/gitlab")
+async def test_gitlab_config(
+    config_data: GitLabConfigRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    测试GitLab配置连接
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有管理员可以测试配置"
+        )
+
+    try:
+        validate_gitlab_groups(config_data.groups)
+        user = validate_gitlab_token(config_data.url, config_data.token)
+        return {
+            "code": 0,
+            "message": "GitLab连接测试成功",
+            "data": {
+                "user": user
+            }
+        }
+    except Exception as e:
+        logger.error(f"测试GitLab配置失败: {str(e)}", exc_info=True)
         return {
             "code": -1,
             "message": f"测试失败: {str(e)}",
