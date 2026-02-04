@@ -35,14 +35,14 @@
           <div class="page-actions">
             <el-button
               size="small"
-              :disabled="projectPager.page <= 1"
+              :disabled="projectIsFirst"
               @click="handleProjectPrev"
             >
               上一页
             </el-button>
             <el-button
               size="small"
-              :disabled="projectPager.page >= projectPager.maxPage"
+              :disabled="projectIsLast"
               @click="handleProjectNext"
             >
               下一页
@@ -93,14 +93,14 @@
           <div class="page-actions">
             <el-button
               size="small"
-              :disabled="userPager.page <= 1"
+              :disabled="userIsFirst"
               @click="handleUserPrev"
             >
               上一页
             </el-button>
             <el-button
               size="small"
-              :disabled="userPager.page >= userPager.maxPage"
+              :disabled="userIsLast"
               @click="handleUserNext"
             >
               下一页
@@ -141,14 +141,14 @@
         <div class="page-actions">
           <el-button
             size="small"
-            :disabled="branchPager.page <= 1"
+            :disabled="branchIsFirst"
             @click="handleBranchPrev"
           >
             上一页
           </el-button>
           <el-button
             size="small"
-            :disabled="branchPager.page >= branchPager.maxPage"
+            :disabled="branchIsLast"
             @click="handleBranchNext"
           >
             下一页
@@ -189,14 +189,14 @@
         <div class="page-actions">
           <el-button
             size="small"
-            :disabled="commitPager.page <= 1"
+            :disabled="commitIsFirst"
             @click="handleCommitPrev"
           >
             上一页
           </el-button>
           <el-button
             size="small"
-            :disabled="commitPager.page >= commitPager.maxPage"
+            :disabled="commitIsLast"
             @click="handleCommitNext"
           >
             下一页
@@ -231,7 +231,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { usePagination, PAGE_SIZE_OPTIONS } from '@/composables/usePagination'
 import {
@@ -263,6 +263,15 @@ const projectPager = usePagination()
 const userPager = usePagination()
 const branchPager = usePagination()
 const commitPager = usePagination()
+
+const projectIsFirst = computed(() => projectPager.page.value <= 1)
+const projectIsLast = computed(() => projectPager.page.value >= projectPager.maxPage.value)
+const userIsFirst = computed(() => userPager.page.value <= 1)
+const userIsLast = computed(() => userPager.page.value >= userPager.maxPage.value)
+const branchIsFirst = computed(() => branchPager.page.value <= 1)
+const branchIsLast = computed(() => branchPager.page.value >= branchPager.maxPage.value)
+const commitIsFirst = computed(() => commitPager.page.value <= 1)
+const commitIsLast = computed(() => commitPager.page.value >= commitPager.maxPage.value)
 
 const projectsLoading = ref(false)
 const usersLoading = ref(false)

@@ -37,14 +37,14 @@
       <div class="page-actions">
         <el-button
           size="small"
-          :disabled="databasePager.page <= 1"
+          :disabled="databaseIsFirst"
           @click="handleDatabasePrev"
         >
           上一页
         </el-button>
         <el-button
           size="small"
-          :disabled="databasePager.page >= databasePager.maxPage"
+          :disabled="databaseIsLast"
           @click="handleDatabaseNext"
         >
           下一页
@@ -104,14 +104,14 @@
         <div class="page-actions">
           <el-button
             size="small"
-            :disabled="tablePager.page <= 1"
+            :disabled="tableIsFirst"
             @click="handleTablePrev"
           >
             上一页
           </el-button>
           <el-button
             size="small"
-            :disabled="tablePager.page >= tablePager.maxPage"
+            :disabled="tableIsLast"
             @click="handleTableNext"
           >
             下一页
@@ -147,7 +147,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { usePagination, PAGE_SIZE_OPTIONS } from '@/composables/usePagination'
 import {
@@ -168,6 +168,11 @@ const tableRemarkCache = ref<Record<number, string>>({})
 
 const databasePager = usePagination()
 const tablePager = usePagination()
+
+const databaseIsFirst = computed(() => databasePager.page.value <= 1)
+const databaseIsLast = computed(() => databasePager.page.value >= databasePager.maxPage.value)
+const tableIsFirst = computed(() => tablePager.page.value <= 1)
+const tableIsLast = computed(() => tablePager.page.value >= tablePager.maxPage.value)
 
 const loading = ref(false)
 const tablesLoading = ref(false)
