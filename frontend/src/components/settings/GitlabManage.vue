@@ -32,12 +32,16 @@
           </el-table-column>
         </el-table>
         <div class="pagination">
+          <div class="page-summary">
+            当前页 {{ projectPager.page }} / {{ projectPager.maxPage }}，每页 {{ projectPager.pageSize }} 条
+          </div>
           <el-pagination
             v-model:current-page="projectPager.page"
             v-model:page-size="projectPager.pageSize"
             :page-sizes="PAGE_SIZE_OPTIONS"
             :total="projectPager.total"
-            layout="total, sizes, prev, pager, next"
+            :hide-on-single-page="false"
+            layout="prev, pager, next, sizes, jumper, total"
             @size-change="handleProjectPageChange"
             @current-change="handleProjectPageChange"
           />
@@ -70,12 +74,16 @@
           </el-table-column>
         </el-table>
         <div class="pagination">
+          <div class="page-summary">
+            当前页 {{ userPager.page }} / {{ userPager.maxPage }}，每页 {{ userPager.pageSize }} 条
+          </div>
           <el-pagination
             v-model:current-page="userPager.page"
             v-model:page-size="userPager.pageSize"
             :page-sizes="PAGE_SIZE_OPTIONS"
             :total="userPager.total"
-            layout="total, sizes, prev, pager, next"
+            :hide-on-single-page="false"
+            layout="prev, pager, next, sizes, jumper, total"
             @size-change="handleUserPageChange"
             @current-change="handleUserPageChange"
           />
@@ -98,12 +106,16 @@
         </el-table-column>
       </el-table>
       <div class="pagination">
+        <div class="page-summary">
+          当前页 {{ branchPager.page }} / {{ branchPager.maxPage }}，每页 {{ branchPager.pageSize }} 条
+        </div>
         <el-pagination
           v-model:current-page="branchPager.page"
           v-model:page-size="branchPager.pageSize"
           :page-sizes="PAGE_SIZE_OPTIONS"
           :total="branchPager.total"
-          layout="total, sizes, prev, pager, next"
+          :hide-on-single-page="false"
+          layout="prev, pager, next, sizes, jumper, total"
           @size-change="handleBranchPageChange"
           @current-change="handleBranchPageChange"
         />
@@ -126,12 +138,16 @@
         </el-table-column>
       </el-table>
       <div class="pagination">
+        <div class="page-summary">
+          当前页 {{ commitPager.page }} / {{ commitPager.maxPage }}，每页 {{ commitPager.pageSize }} 条
+        </div>
         <el-pagination
           v-model:current-page="commitPager.page"
           v-model:page-size="commitPager.pageSize"
           :page-sizes="PAGE_SIZE_OPTIONS"
           :total="commitPager.total"
-          layout="total, sizes, prev, pager, next"
+          :hide-on-single-page="false"
+          layout="prev, pager, next, sizes, jumper, total"
           @size-change="handleCommitPageChange"
           @current-change="handleCommitPageChange"
         />
@@ -453,8 +469,16 @@ onMounted(() => {
 
 .pagination {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
   margin-top: 12px;
+}
+
+.page-summary {
+  color: #606266;
+  font-size: 13px;
 }
 
 .name-cell {

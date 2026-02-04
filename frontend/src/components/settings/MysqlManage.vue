@@ -34,12 +34,16 @@
       </el-table-column>
     </el-table>
     <div class="pagination">
+      <div class="page-summary">
+        当前页 {{ databasePager.page }} / {{ databasePager.maxPage }}，每页 {{ databasePager.pageSize }} 条
+      </div>
       <el-pagination
         v-model:current-page="databasePager.page"
         v-model:page-size="databasePager.pageSize"
         :page-sizes="PAGE_SIZE_OPTIONS"
         :total="databasePager.total"
-        layout="total, sizes, prev, pager, next"
+        :hide-on-single-page="false"
+        layout="prev, pager, next, sizes, jumper, total"
         @size-change="handleDatabasePageChange"
         @current-change="handleDatabasePageChange"
       />
@@ -81,12 +85,16 @@
       </el-table-column>
     </el-table>
       <div class="pagination">
+        <div class="page-summary">
+          当前页 {{ tablePager.page }} / {{ tablePager.maxPage }}，每页 {{ tablePager.pageSize }} 条
+        </div>
         <el-pagination
           v-model:current-page="tablePager.page"
           v-model:page-size="tablePager.pageSize"
           :page-sizes="PAGE_SIZE_OPTIONS"
           :total="tablePager.total"
-          layout="total, sizes, prev, pager, next"
+          :hide-on-single-page="false"
+          layout="prev, pager, next, sizes, jumper, total"
           @size-change="handleTablePageChange"
           @current-change="handleTablePageChange"
         />
@@ -332,8 +340,16 @@ onMounted(() => {
 
 .pagination {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
   margin-top: 12px;
+}
+
+.page-summary {
+  color: #606266;
+  font-size: 13px;
 }
 
 .name-cell {
