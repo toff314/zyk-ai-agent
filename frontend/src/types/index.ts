@@ -73,9 +73,17 @@ export interface CreateUserRequest {
 export interface MentionItem {
   id: string | number
   name: string
-  type: 'user' | 'database' | 'table'
+  type: 'user' | 'database' | 'table' | 'template'
   avatar_url?: string
   description?: string
+  content?: string
+}
+
+export interface ChatTemplate {
+  id: string
+  name: string
+  description?: string
+  content: string
 }
 
 // GitLab用户类型

@@ -2,7 +2,7 @@
  * 对话相关API
  */
 import request from '@/utils/request'
-import type { Conversation, Message } from '@/types'
+import type { Conversation, Message, ChatTemplate } from '@/types'
 
 export interface ChatRequest {
   message: string
@@ -170,4 +170,15 @@ export async function getMysqlTables(database: string, refresh = false): Promise
  */
 export async function getChatStats(): Promise<ChatStats> {
   return request.get<ChatStats>('/chat/stats')
+}
+
+/**
+ * 获取快捷模板列表
+ */
+export async function getChatTemplates(
+  mode: ChatRequest['mode']
+): Promise<ChatTemplate[]> {
+  return request.get<ChatTemplate[]>('/chat/templates', {
+    params: { mode }
+  })
 }
