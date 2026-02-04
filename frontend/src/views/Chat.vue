@@ -645,6 +645,14 @@ const getModeType = (mode: string) => {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
+.message.assistant .message-content {
+  max-width: 840px;
+}
+
+.message.user .message-content {
+  max-width: 360px;
+}
+
 .message.user .message-content {
   background: #409eff;
   color: white;
