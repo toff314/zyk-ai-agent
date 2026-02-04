@@ -116,5 +116,74 @@ def list_users():
     ]
 
 
+@mcp.tool()
+def list_commits(project_id: int, limit: int = DEFAULT_LIMIT):
+    per_page = int(os.getenv("GITLAB_PER_PAGE", DEFAULT_PER_PAGE))
+    gl = _connect_gitlab()
+
+    commits = []
+    remaining = _clamp_limit(limit)
+    page = 1
+    while remaining > 0:
+        page_size = min(per_page, remaining)
+        page_items = gl.projects.get(project_id).commits.list(
+            page=page, per_page=page_size
+        )
+        if not page_items:
+            break
+        if len(page_items) > remaining:
+            page_items = page_items[:remaining]
+            commits.extend(page_items)
+            break
+        commits.extend(page_items)
+        remaining -= len(page_items)
+        if len(page_items) < page_size:
+            break
+        page += 1
+
+    return [
+        {
+            "id": commit.id,
+            "short_id": commit.short_id,
+            "title": commit.title,
+            "author_name": commit.author_name,
+            "created_at": commit.created_at,
+            "web_url": commit.web_url,
+        }
+        for commit in commits
+    ]
+
+
+@mcp.tool()
+def get_commit_diff(project_id: int, commit_sha: str):
+    if not commit_sha:
+        raise Exception("commit_sha is required")
+
+    max_diff_chars = int(os.getenv("GITLAB_MAX_DIFF_CHARS", "200000"))
+    gl = _connect_gitlab()
+    project = gl.projects.get(project_id)
+    commit = project.commits.get(commit_sha)
+
+    diffs = []
+    for item in commit.diff():
+        diffs.append(
+            {
+                "old_path": item.get("old_path"),
+                "new_path": item.get("new_path"),
+                "diff": _truncate_patch(item.get("diff"), max_diff_chars),
+            }
+        )
+
+    return {
+        "id": commit.id,
+        "short_id": commit.short_id,
+        "title": commit.title,
+        "author_name": commit.author_name,
+        "created_at": commit.created_at,
+        "web_url": commit.web_url,
+        "diffs": diffs,
+    }
+
+
 if __name__ == "__main__":
     mcp.run()

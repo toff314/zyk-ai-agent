@@ -59,6 +59,49 @@ class StubUser:
         self.state = state
 
 
+class StubCommit:
+    def __init__(self, commit_id, short_id, title, author_name, created_at, web_url):
+        self.id = commit_id
+        self.short_id = short_id
+        self.title = title
+        self.author_name = author_name
+        self.created_at = created_at
+        self.web_url = web_url
+
+    def diff(self):
+        return [
+            {
+                "old_path": "a.txt",
+                "new_path": "a.txt",
+                "diff": "x" * 10,
+            }
+        ]
+
+
+class StubCommits:
+    def __init__(self, commits):
+        self._commits = commits
+
+    def list(self, **_kwargs):
+        return self._commits
+
+    def get(self, _sha):
+        return self._commits[0]
+
+
+class StubProjectWithCommits:
+    def __init__(self, commits):
+        self.commits = StubCommits(commits)
+
+
+class StubProjectsAPI:
+    def __init__(self, project):
+        self._project = project
+
+    def get(self, _project_id):
+        return self._project
+
+
 def test_list_projects_uses_groups(monkeypatch):
     groups = [
         StubGroup(
@@ -111,3 +154,53 @@ def test_list_users(monkeypatch):
         {"id": 10, "name": "Alice", "username": "alice", "state": "active"},
         {"id": 11, "name": "Bob", "username": "bob", "state": "blocked"},
     ]
+
+
+def test_list_commits(monkeypatch):
+    commits = [
+        StubCommit("abc", "abc", "Fix", "Alice", "2024-01-01", "https://gitlab/c/1"),
+        StubCommit("def", "def", "Add", "Bob", "2024-01-02", "https://gitlab/c/2"),
+    ]
+    project = StubProjectWithCommits(commits)
+
+    class StubGL2:
+        def __init__(self, project):
+            self.projects = StubProjectsAPI(project)
+
+    def _stub_connect():
+        return StubGL2(project)
+
+    monkeypatch.setattr(server, "_connect_gitlab", _stub_connect)
+
+    result = server.list_commits.fn(123, limit=1)
+    assert result == [
+        {
+            "id": "abc",
+            "short_id": "abc",
+            "title": "Fix",
+            "author_name": "Alice",
+            "created_at": "2024-01-01",
+            "web_url": "https://gitlab/c/1",
+        }
+    ]
+
+
+def test_get_commit_diff_truncates(monkeypatch):
+    commits = [
+        StubCommit("abc", "abc", "Fix", "Alice", "2024-01-01", "https://gitlab/c/1"),
+    ]
+    project = StubProjectWithCommits(commits)
+
+    class StubGL2:
+        def __init__(self, project):
+            self.projects = StubProjectsAPI(project)
+
+    def _stub_connect():
+        return StubGL2(project)
+
+    monkeypatch.setenv("GITLAB_MAX_DIFF_CHARS", "5")
+    monkeypatch.setattr(server, "_connect_gitlab", _stub_connect)
+
+    result = server.get_commit_diff.fn(123, "abc")
+    assert result["id"] == "abc"
+    assert result["diffs"][0]["diff"] == "xxxxx... [truncated]"
