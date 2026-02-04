@@ -32,6 +32,22 @@
           </el-table-column>
         </el-table>
         <div class="pagination">
+          <div class="page-actions">
+            <el-button
+              size="small"
+              :disabled="projectPager.page <= 1"
+              @click="handleProjectPrev"
+            >
+              上一页
+            </el-button>
+            <el-button
+              size="small"
+              :disabled="projectPager.page >= projectPager.maxPage"
+              @click="handleProjectNext"
+            >
+              下一页
+            </el-button>
+          </div>
           <div class="page-summary">
             当前页 {{ projectPager.page }} / {{ projectPager.maxPage }}，每页 {{ projectPager.pageSize }} 条
           </div>
@@ -74,6 +90,22 @@
           </el-table-column>
         </el-table>
         <div class="pagination">
+          <div class="page-actions">
+            <el-button
+              size="small"
+              :disabled="userPager.page <= 1"
+              @click="handleUserPrev"
+            >
+              上一页
+            </el-button>
+            <el-button
+              size="small"
+              :disabled="userPager.page >= userPager.maxPage"
+              @click="handleUserNext"
+            >
+              下一页
+            </el-button>
+          </div>
           <div class="page-summary">
             当前页 {{ userPager.page }} / {{ userPager.maxPage }}，每页 {{ userPager.pageSize }} 条
           </div>
@@ -106,6 +138,22 @@
         </el-table-column>
       </el-table>
       <div class="pagination">
+        <div class="page-actions">
+          <el-button
+            size="small"
+            :disabled="branchPager.page <= 1"
+            @click="handleBranchPrev"
+          >
+            上一页
+          </el-button>
+          <el-button
+            size="small"
+            :disabled="branchPager.page >= branchPager.maxPage"
+            @click="handleBranchNext"
+          >
+            下一页
+          </el-button>
+        </div>
         <div class="page-summary">
           当前页 {{ branchPager.page }} / {{ branchPager.maxPage }}，每页 {{ branchPager.pageSize }} 条
         </div>
@@ -138,6 +186,22 @@
         </el-table-column>
       </el-table>
       <div class="pagination">
+        <div class="page-actions">
+          <el-button
+            size="small"
+            :disabled="commitPager.page <= 1"
+            @click="handleCommitPrev"
+          >
+            上一页
+          </el-button>
+          <el-button
+            size="small"
+            :disabled="commitPager.page >= commitPager.maxPage"
+            @click="handleCommitNext"
+          >
+            下一页
+          </el-button>
+        </div>
         <div class="page-summary">
           当前页 {{ commitPager.page }} / {{ commitPager.maxPage }}，每页 {{ commitPager.pageSize }} 条
         </div>
@@ -444,6 +508,70 @@ const handleCommitPageChange = () => {
   loadCommits(false)
 }
 
+const handleProjectPrev = () => {
+  const before = projectPager.page.value
+  projectPager.prevPage()
+  if (projectPager.page.value !== before) {
+    handleProjectPageChange()
+  }
+}
+
+const handleProjectNext = () => {
+  const before = projectPager.page.value
+  projectPager.nextPage()
+  if (projectPager.page.value !== before) {
+    handleProjectPageChange()
+  }
+}
+
+const handleUserPrev = () => {
+  const before = userPager.page.value
+  userPager.prevPage()
+  if (userPager.page.value !== before) {
+    handleUserPageChange()
+  }
+}
+
+const handleUserNext = () => {
+  const before = userPager.page.value
+  userPager.nextPage()
+  if (userPager.page.value !== before) {
+    handleUserPageChange()
+  }
+}
+
+const handleBranchPrev = () => {
+  const before = branchPager.page.value
+  branchPager.prevPage()
+  if (branchPager.page.value !== before) {
+    handleBranchPageChange()
+  }
+}
+
+const handleBranchNext = () => {
+  const before = branchPager.page.value
+  branchPager.nextPage()
+  if (branchPager.page.value !== before) {
+    handleBranchPageChange()
+  }
+}
+
+const handleCommitPrev = () => {
+  const before = commitPager.page.value
+  commitPager.prevPage()
+  if (commitPager.page.value !== before) {
+    handleCommitPageChange()
+  }
+}
+
+const handleCommitNext = () => {
+  const before = commitPager.page.value
+  commitPager.nextPage()
+  if (commitPager.page.value !== before) {
+    handleCommitPageChange()
+  }
+}
+
 onMounted(() => {
   loadProjects()
   loadUsers()
@@ -479,6 +607,11 @@ onMounted(() => {
 .page-summary {
   color: #606266;
   font-size: 13px;
+}
+
+.page-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .name-cell {

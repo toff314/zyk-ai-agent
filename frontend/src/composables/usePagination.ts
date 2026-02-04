@@ -23,12 +23,22 @@ export function usePagination(initialPage = 1, initialPageSize = DEFAULT_PAGE_SI
     page.value = 1
   }
 
+  const prevPage = () => {
+    page.value = Math.max(1, page.value - 1)
+  }
+
+  const nextPage = () => {
+    page.value = Math.min(maxPage.value, page.value + 1)
+  }
+
   return {
     page,
     pageSize,
     total,
     maxPage,
     setTotal,
-    resetPage
+    resetPage,
+    prevPage,
+    nextPage
   }
 }

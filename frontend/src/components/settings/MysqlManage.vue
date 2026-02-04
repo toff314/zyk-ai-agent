@@ -34,6 +34,22 @@
       </el-table-column>
     </el-table>
     <div class="pagination">
+      <div class="page-actions">
+        <el-button
+          size="small"
+          :disabled="databasePager.page <= 1"
+          @click="handleDatabasePrev"
+        >
+          上一页
+        </el-button>
+        <el-button
+          size="small"
+          :disabled="databasePager.page >= databasePager.maxPage"
+          @click="handleDatabaseNext"
+        >
+          下一页
+        </el-button>
+      </div>
       <div class="page-summary">
         当前页 {{ databasePager.page }} / {{ databasePager.maxPage }}，每页 {{ databasePager.pageSize }} 条
       </div>
@@ -85,6 +101,22 @@
       </el-table-column>
     </el-table>
       <div class="pagination">
+        <div class="page-actions">
+          <el-button
+            size="small"
+            :disabled="tablePager.page <= 1"
+            @click="handleTablePrev"
+          >
+            上一页
+          </el-button>
+          <el-button
+            size="small"
+            :disabled="tablePager.page >= tablePager.maxPage"
+            @click="handleTableNext"
+          >
+            下一页
+          </el-button>
+        </div>
         <div class="page-summary">
           当前页 {{ tablePager.page }} / {{ tablePager.maxPage }}，每页 {{ tablePager.pageSize }} 条
         </div>
@@ -316,6 +348,38 @@ const handleTablePageChange = () => {
   loadTables(false)
 }
 
+const handleDatabasePrev = () => {
+  const before = databasePager.page.value
+  databasePager.prevPage()
+  if (databasePager.page.value !== before) {
+    handleDatabasePageChange()
+  }
+}
+
+const handleDatabaseNext = () => {
+  const before = databasePager.page.value
+  databasePager.nextPage()
+  if (databasePager.page.value !== before) {
+    handleDatabasePageChange()
+  }
+}
+
+const handleTablePrev = () => {
+  const before = tablePager.page.value
+  tablePager.prevPage()
+  if (tablePager.page.value !== before) {
+    handleTablePageChange()
+  }
+}
+
+const handleTableNext = () => {
+  const before = tablePager.page.value
+  tablePager.nextPage()
+  if (tablePager.page.value !== before) {
+    handleTablePageChange()
+  }
+}
+
 onMounted(() => {
   loadDatabases(false)
 })
@@ -350,6 +414,11 @@ onMounted(() => {
 .page-summary {
   color: #606266;
   font-size: 13px;
+}
+
+.page-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .name-cell {

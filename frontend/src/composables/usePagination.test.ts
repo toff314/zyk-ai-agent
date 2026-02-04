@@ -25,4 +25,24 @@ describe('usePagination', () => {
     pagination.resetPage()
     expect(pagination.page.value).toBe(1)
   })
+
+  it('prevPage does not go below 1', () => {
+    const pagination = usePagination(1, 20)
+    pagination.prevPage()
+    expect(pagination.page.value).toBe(1)
+  })
+
+  it('nextPage increments but not beyond maxPage', () => {
+    const pagination = usePagination(1, 10)
+    pagination.setTotal(25)
+
+    pagination.nextPage()
+    expect(pagination.page.value).toBe(2)
+
+    pagination.nextPage()
+    expect(pagination.page.value).toBe(3)
+
+    pagination.nextPage()
+    expect(pagination.page.value).toBe(3)
+  })
 })
