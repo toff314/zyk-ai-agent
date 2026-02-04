@@ -48,7 +48,7 @@ interface Props {
   visible: boolean
   items: MentionItem[]
   position: { x: number; y: number }
-  type: 'user' | 'database' | 'table'
+  type: 'user' | 'database' | 'table' | 'template'
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -69,7 +69,8 @@ const title = computed(() => {
   const titles = {
     user: '选择研发人员',
     database: '选择数据库',
-    table: '选择表'
+    table: '选择表',
+    template: '快捷模板'
   }
   return titles[props.type]
 })

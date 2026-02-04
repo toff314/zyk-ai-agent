@@ -141,12 +141,14 @@ import {
   getGitLabUsers,
   getMysqlDatabases,
   getMysqlTables,
+  getChatTemplates,
   type ChatRequest
 } from '@/api/chat'
 import { useUserStore } from '@/store/user'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import MentionPicker from '@/components/MentionPicker.vue'
-import type { Conversation, Message, StreamResponse, GitLabUser, MysqlDatabase, MysqlTable } from '@/types'
+import type { Conversation, Message, StreamResponse, GitLabUser, MysqlDatabase, MysqlTable, MentionItem, ChatTemplate } from '@/types'
+import { replaceTriggerText } from '@/utils/triggerInsert'
 
 const userStore = useUserStore()
 
@@ -161,8 +163,11 @@ const messagesContainer = ref<HTMLElement>()
 // @选择相关
 const mentionVisible = ref(false)
 const mentionPosition = ref({ x: 0, y: 0 })
-const mentionType = ref<'user' | 'database' | 'table'>('user')
-const mentionItems = ref<any[]>([])
+const mentionType = ref<'user' | 'database' | 'table' | 'template'>('user')
+const mentionItems = ref<MentionItem[]>([])
+const mentionTriggerIndex = ref<number | null>(null)
+const mentionTriggerChar = ref<'@' | '#' | null>(null)
+const templateCache = ref<Record<string, MentionItem[]>>({})
 const cursorPosition = ref(0)
 const inputEl = ref<HTMLInputElement>()
 const mysqlDatabases = ref<MysqlDatabase[]>([])
@@ -324,115 +329,198 @@ const sendMessage = async () => {
   await sendMessageWithPayload({ message: inputMessage.value })
 }
 
-const handleInput = async (value: string) => {
-  // 检测@符号
-  const atMatch = value.lastIndexOf('@', cursorPosition.value - 1)
-  if (atMatch !== -1 && (atMatch === 0 || value[atMatch - 1] === ' ')) {
-    const textAfterAt = value.slice(atMatch + 1)
-    if (!textAfterAt.includes(' ')) {
-      // 显示@选择框
-      const textarea = document.querySelector('.el-textarea__inner') as HTMLTextAreaElement
-      if (textarea) {
-        const rect = textarea.getBoundingClientRect()
-        const text = textarea.value.substring(0, cursorPosition.value)
-        const lines = text.split('\n')
-        const line = lines.length
-        const char = lines[lines.length - 1].length
-        
-        mentionPosition.value = {
-          x: rect.left + char * 8 + 20,
-          y: rect.top + line * 24 + 60
-        }
-      }
-
-      // 根据模式@选择不同的内容
-      if (currentMode.value === 'data_analysis') {
-        if (selectedDatabase.value) {
-          const databaseName = selectedDatabase.value
-          mentionType.value = 'table'
-          if (!mysqlTables.value[databaseName]) {
-            try {
-              const tables = await getMysqlTables(databaseName)
-              mysqlTables.value = { ...mysqlTables.value, [databaseName]: tables }
-            } catch (error) {
-              mysqlTables.value = { ...mysqlTables.value, [databaseName]: [] }
-            }
-          }
-          const tables = mysqlTables.value[databaseName] || []
-          const tableItems = tables.map((table: MysqlTable) => ({
-            id: `${databaseName}.${table.name}`,
-            name: table.remark || table.name,
-            raw_name: table.name,
-            type: 'table',
-            description: table.comment || table.type || databaseName
-          }))
-          mentionItems.value = [
-            {
-              id: '__reset_db__',
-              name: '切换数据库',
-              type: 'database',
-              description: `当前: ${databaseName}`
-            },
-            ...tableItems
-          ]
-        } else {
-          mentionType.value = 'database'
-          if (mysqlDatabases.value.length === 0) {
-            try {
-              mysqlDatabases.value = await getMysqlDatabases()
-            } catch (error) {
-              mysqlDatabases.value = []
-            }
-          }
-          mentionItems.value = mysqlDatabases.value.map((db: MysqlDatabase) => ({
-            id: db.name,
-            name: db.remark || db.name,
-            raw_name: db.name,
-            type: 'database'
-          }))
-        }
-      } else if (currentMode.value === 'code_review' && isLoggedIn.value) {
-        mentionType.value = 'user'
-        try {
-          const users = await getGitLabUsers()
-          mentionItems.value = users.map((u: GitLabUser) => ({
-            id: u.id,
-            name: u.remark || u.name || u.username,
-            type: 'user',
-            avatar_url: u.avatar_url,
-            description: `本周提交: ${u.commits_week} 次`
-          }))
-        } catch (error) {
-          mentionItems.value = []
-        }
-      } else {
-        mentionItems.value = []
-      }
-      
-      mentionVisible.value = true
-    }
-  } else {
-    mentionVisible.value = false
+const findTriggerIndex = (value: string, cursor: number, trigger: '@' | '#') => {
+  const index = value.lastIndexOf(trigger, cursor - 1)
+  if (index === -1) return null
+  if (index > 0) {
+    const prev = value[index - 1]
+    if (prev !== ' ' && prev !== '\n') return null
   }
+  const textAfter = value.slice(index + 1, cursor)
+  if (textAfter.includes(' ') || textAfter.includes('\n')) return null
+  return index
 }
 
-const handleMentionSelect = (item: any) => {
-  const beforeMention = inputMessage.value.slice(0, inputMessage.value.lastIndexOf('@'))
+const handleInput = async (value: string) => {
+  const textarea = document.querySelector('.el-textarea__inner') as HTMLTextAreaElement
+  if (textarea) {
+    cursorPosition.value = textarea.selectionStart
+  }
+
+  const atIndex = findTriggerIndex(value, cursorPosition.value, '@')
+  const hashIndex = findTriggerIndex(value, cursorPosition.value, '#')
+
+  let triggerChar: '@' | '#' | null = null
+  let triggerIndex: number | null = null
+
+  if (atIndex !== null && (hashIndex === null || atIndex > hashIndex)) {
+    triggerChar = '@'
+    triggerIndex = atIndex
+  } else if (hashIndex !== null) {
+    triggerChar = '#'
+    triggerIndex = hashIndex
+  }
+
+  if (!triggerChar || triggerIndex === null) {
+    mentionVisible.value = false
+    mentionTriggerIndex.value = null
+    mentionTriggerChar.value = null
+    return
+  }
+
+  mentionTriggerIndex.value = triggerIndex
+  mentionTriggerChar.value = triggerChar
+
+  if (textarea) {
+    const rect = textarea.getBoundingClientRect()
+    const text = textarea.value.substring(0, cursorPosition.value)
+    const lines = text.split('\n')
+    const line = lines.length
+    const char = lines[lines.length - 1].length
+
+    mentionPosition.value = {
+      x: rect.left + char * 8 + 20,
+      y: rect.top + line * 24 + 60
+    }
+  }
+
+  if (triggerChar === '@') {
+    // 根据模式@选择不同的内容
+    if (currentMode.value === 'data_analysis') {
+      if (selectedDatabase.value) {
+        const databaseName = selectedDatabase.value
+        mentionType.value = 'table'
+        if (!mysqlTables.value[databaseName]) {
+          try {
+            const tables = await getMysqlTables(databaseName)
+            mysqlTables.value = { ...mysqlTables.value, [databaseName]: tables }
+          } catch (error) {
+            mysqlTables.value = { ...mysqlTables.value, [databaseName]: [] }
+          }
+        }
+        const tables = mysqlTables.value[databaseName] || []
+        const tableItems = tables.map((table: MysqlTable) => ({
+          id: `${databaseName}.${table.name}`,
+          name: table.remark || table.name,
+          raw_name: table.name,
+          type: 'table',
+          description: table.comment || table.type || databaseName
+        }))
+        mentionItems.value = [
+          {
+            id: '__reset_db__',
+            name: '切换数据库',
+            type: 'database',
+            description: `当前: ${databaseName}`
+          },
+          ...tableItems
+        ]
+      } else {
+        mentionType.value = 'database'
+        if (mysqlDatabases.value.length === 0) {
+          try {
+            mysqlDatabases.value = await getMysqlDatabases()
+          } catch (error) {
+            mysqlDatabases.value = []
+          }
+        }
+        mentionItems.value = mysqlDatabases.value.map((db: MysqlDatabase) => ({
+          id: db.name,
+          name: db.remark || db.name,
+          raw_name: db.name,
+          type: 'database'
+        }))
+      }
+    } else if (currentMode.value === 'code_review' && isLoggedIn.value) {
+      mentionType.value = 'user'
+      try {
+        const users = await getGitLabUsers()
+        mentionItems.value = users.map((u: GitLabUser) => ({
+          id: u.id,
+          name: u.remark || u.name || u.username,
+          type: 'user',
+          avatar_url: u.avatar_url,
+          description: `本周提交: ${u.commits_week} 次`
+        }))
+      } catch (error) {
+        mentionItems.value = []
+      }
+    } else {
+      mentionItems.value = []
+    }
+  } else {
+    mentionType.value = 'template'
+    const modeKey = currentMode.value
+    if (!templateCache.value[modeKey]) {
+      try {
+        const templates = await getChatTemplates(modeKey)
+        templateCache.value[modeKey] = templates.map((t: ChatTemplate) => ({
+          id: t.id,
+          name: t.name,
+          type: 'template',
+          description: t.description,
+          content: t.content
+        }))
+      } catch (error) {
+        templateCache.value[modeKey] = []
+      }
+    }
+    mentionItems.value = templateCache.value[modeKey]
+  }
+
+  mentionVisible.value = true
+}
+
+const handleMentionSelect = (item: MentionItem) => {
+  const fallbackIndex = mentionTriggerChar.value === '#'
+    ? inputMessage.value.lastIndexOf('#')
+    : inputMessage.value.lastIndexOf('@')
+  const triggerIndex = mentionTriggerIndex.value ?? fallbackIndex
   const afterMention = inputMessage.value.slice(cursorPosition.value)
-  
-  let mentionText = ''
+
+  if (item.type === 'template') {
+    const replacement = item.content || item.name
+    if (triggerIndex !== -1) {
+      inputMessage.value = replaceTriggerText(
+        inputMessage.value,
+        triggerIndex,
+        cursorPosition.value,
+        replacement
+      )
+    }
+    mentionVisible.value = false
+    mentionTriggerIndex.value = null
+    mentionTriggerChar.value = null
+
+    nextTick(() => {
+      const textarea = document.querySelector('.el-textarea__inner') as HTMLTextAreaElement
+      if (textarea) {
+        textarea.focus()
+      }
+    })
+    return
+  }
+
+  const beforeMention = triggerIndex === -1
+    ? inputMessage.value
+    : inputMessage.value.slice(0, triggerIndex)
+
   if (item.type === 'database') {
     if (item.id === '__reset_db__') {
       selectedDatabase.value = null
       mentionVisible.value = false
+      mentionTriggerIndex.value = null
+      mentionTriggerChar.value = null
       return
     }
     selectedDatabase.value = item.raw_name || item.name
   }
-  mentionText = `@${item.name} `
-  
+
+  const mentionText = `@${item.name} `
   inputMessage.value = beforeMention + mentionText + afterMention
   mentionVisible.value = false
+  mentionTriggerIndex.value = null
+  mentionTriggerChar.value = null
   
   // 聚焦输入框
   nextTick(() => {

@@ -77,6 +77,7 @@ export interface MentionItem {
   avatar_url?: string
   description?: string
   content?: string
+  raw_name?: string
 }
 
 export interface ChatTemplate {
