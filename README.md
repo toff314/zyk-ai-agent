@@ -196,10 +196,10 @@ python -m playwright install
 python main.py
 ```
 
-后端服务将在 **http://localhost:8000** 启动
+后端服务将在 **http://localhost:8001** 启动
 
-- API文档（Swagger UI）：http://localhost:8000/docs
-- API文档（ReDoc）：http://localhost:8000/redoc
+- API文档（Swagger UI）：http://localhost:8001/docs
+- API文档（ReDoc）：http://localhost:8001/redoc
 
 **默认管理员账号**：
 - 用户名：`admin`
@@ -613,7 +613,7 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     ports:
-      - "8000:8000"
+      - "8001:8001"
     environment:
       - DATABASE_URL=sqlite:///./app.db
       - JWT_SECRET_KEY=your-secret-key
