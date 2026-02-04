@@ -278,6 +278,48 @@ class MCPMySQLClient:
             return self._call_tool("list_tables", args, mysql_config=mysql_config)
         except Exception as e:
             raise Exception(f"获取表列表失败: {e}")
+
+    async def describe_table(
+        self,
+        table_name: str,
+        database: Optional[str] = None,
+        mysql_config: Optional[dict[str, Any]] = None,
+    ) -> list[dict]:
+        """获取表结构信息"""
+        try:
+            args = {"table_name": table_name}
+            if database:
+                args["database"] = database
+            return self._call_tool("describe_table", args, mysql_config=mysql_config)
+        except Exception as e:
+            raise Exception(f"获取表结构失败: {e}")
+
+    async def show_table_status(
+        self,
+        database: Optional[str] = None,
+        mysql_config: Optional[dict[str, Any]] = None,
+    ) -> list[dict]:
+        """获取表状态信息"""
+        try:
+            args = {"database": database} if database else {}
+            return self._call_tool("show_table_status", args, mysql_config=mysql_config)
+        except Exception as e:
+            raise Exception(f"获取表状态失败: {e}")
+
+    async def get_table_indexes(
+        self,
+        table_name: str,
+        database: Optional[str] = None,
+        mysql_config: Optional[dict[str, Any]] = None,
+    ) -> list[dict]:
+        """获取表索引信息"""
+        try:
+            args = {"table_name": table_name}
+            if database:
+                args["database"] = database
+            return self._call_tool("get_table_indexes", args, mysql_config=mysql_config)
+        except Exception as e:
+            raise Exception(f"获取索引信息失败: {e}")
     
     async def get_medicine_stats(self) -> list[dict]:
         """

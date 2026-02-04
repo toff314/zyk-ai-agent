@@ -71,10 +71,15 @@ export async function getMysqlDatabasesManage(
   refresh = false,
   includeDisabled = true,
   page = 1,
-  pageSize = 20
+  pageSize = 20,
+  name?: string
 ) {
+  const params: Record<string, any> = { refresh, include_disabled: includeDisabled, page, page_size: pageSize }
+  if (name && name.trim()) {
+    params.name = name.trim()
+  }
   return request.get<PageResult<MysqlDatabaseManage>>('/mysql/manage/databases', {
-    params: { refresh, include_disabled: includeDisabled, page, page_size: pageSize }
+    params
   })
 }
 
@@ -83,10 +88,21 @@ export async function getMysqlTablesManage(
   refresh = false,
   includeDisabled = true,
   page = 1,
-  pageSize = 20
+  pageSize = 20,
+  name?: string
 ) {
+  const params: Record<string, any> = {
+    database,
+    refresh,
+    include_disabled: includeDisabled,
+    page,
+    page_size: pageSize
+  }
+  if (name && name.trim()) {
+    params.name = name.trim()
+  }
   return request.get<PageResult<MysqlTableManage>>('/mysql/manage/tables', {
-    params: { database, refresh, include_disabled: includeDisabled, page, page_size: pageSize }
+    params
   })
 }
 
@@ -107,10 +123,15 @@ export async function getMysqlTableDetail(database: string, table: string) {
 export async function getGitlabProjects(
   includeDisabled = true,
   page = 1,
-  pageSize = 20
+  pageSize = 20,
+  name?: string
 ) {
+  const params: Record<string, any> = { include_disabled: includeDisabled, page, page_size: pageSize }
+  if (name && name.trim()) {
+    params.name = name.trim()
+  }
   return request.get<PageResult<GitlabProjectManage>>('/gitlab/projects', {
-    params: { include_disabled: includeDisabled, page, page_size: pageSize }
+    params
   })
 }
 
@@ -121,10 +142,15 @@ export async function updateGitlabProject(id: number, payload: { enabled?: boole
 export async function getGitlabUsers(
   includeDisabled = true,
   page = 1,
-  pageSize = 20
+  pageSize = 20,
+  name?: string
 ) {
+  const params: Record<string, any> = { include_disabled: includeDisabled, page, page_size: pageSize }
+  if (name && name.trim()) {
+    params.name = name.trim()
+  }
   return request.get<PageResult<GitlabUserManage>>('/gitlab/users', {
-    params: { include_disabled: includeDisabled, page, page_size: pageSize }
+    params
   })
 }
 

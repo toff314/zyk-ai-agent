@@ -1,6 +1,15 @@
 <template>
   <div class="manage-section">
     <div class="toolbar">
+      <el-input
+        v-model="databaseNameFilter"
+        placeholder="按数据库名搜索"
+        clearable
+        class="toolbar-input"
+        @clear="handleDatabaseSearch"
+        @keyup.enter="handleDatabaseSearch"
+      />
+      <el-button @click="handleDatabaseSearch">查询</el-button>
       <el-button type="primary" @click="loadDatabases(true)">刷新</el-button>
     </div>
     <el-table :data="databases" v-loading="loading" row-key="id">
@@ -67,6 +76,15 @@
 
     <el-drawer v-model="tablesVisible" :title="tablesTitle" size="60%">
       <div class="drawer-toolbar">
+        <el-input
+          v-model="tableNameFilter"
+          placeholder="按表名搜索"
+          clearable
+          class="toolbar-input"
+          @clear="handleTableSearch"
+          @keyup.enter="handleTableSearch"
+        />
+        <el-button @click="handleTableSearch">查询</el-button>
         <el-button type="primary" @click="loadTables(true)">刷新</el-button>
       </div>
       <el-table :data="tables" v-loading="tablesLoading" row-key="id">
@@ -150,6 +168,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { usePagination, PAGE_SIZE_OPTIONS } from '@/composables/usePagination'
+import { normalizeNameFilter } from '@/utils/nameFilter'
 import {
   getMysqlDatabasesManage,
   getMysqlTablesManage,
@@ -165,6 +184,8 @@ const tables = ref<MysqlTableManage[]>([])
 const tableDetail = ref<any[]>([])
 const databaseRemarkCache = ref<Record<number, string>>({})
 const tableRemarkCache = ref<Record<number, string>>({})
+const databaseNameFilter = ref('')
+const tableNameFilter = ref('')
 
 const databasePager = usePagination()
 const tablePager = usePagination()
@@ -214,11 +235,13 @@ const loadDatabases = async (refresh = false) => {
   loading.value = true
   const requestedPage = databasePager.page.value
   try {
+    const nameFilter = normalizeNameFilter(databaseNameFilter.value)
     const response = await getMysqlDatabasesManage(
       refresh,
       true,
       databasePager.page.value,
-      databasePager.pageSize.value
+      databasePager.pageSize.value,
+      nameFilter
     )
     databasePager.setTotal(response.total || 0)
     if (databasePager.page.value !== requestedPage) {
@@ -241,6 +264,7 @@ const loadDatabases = async (refresh = false) => {
 const openTables = async (row: MysqlDatabaseManage) => {
   currentDatabase.value = row.name
   tablesTitle.value = `数据库: ${displayName(row.name, row.remark)}`
+  tableNameFilter.value = ''
   tablePager.resetPage()
   tablesVisible.value = true
   await loadTables(false)
@@ -253,12 +277,14 @@ const loadTables = async (refresh = false) => {
   tablesLoading.value = true
   const requestedPage = tablePager.page.value
   try {
+    const nameFilter = normalizeNameFilter(tableNameFilter.value)
     const response = await getMysqlTablesManage(
       currentDatabase.value,
       refresh,
       true,
       tablePager.page.value,
-      tablePager.pageSize.value
+      tablePager.pageSize.value,
+      nameFilter
     )
     tablePager.setTotal(response.total || 0)
     if (tablePager.page.value !== requestedPage) {
@@ -349,7 +375,17 @@ const handleDatabasePageChange = () => {
   loadDatabases(false)
 }
 
+const handleDatabaseSearch = () => {
+  databasePager.resetPage()
+  loadDatabases(false)
+}
+
 const handleTablePageChange = () => {
+  loadTables(false)
+}
+
+const handleTableSearch = () => {
+  tablePager.resetPage()
   loadTables(false)
 }
 
@@ -398,13 +434,23 @@ onMounted(() => {
 .toolbar {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   margin-bottom: 12px;
 }
 
 .drawer-toolbar {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   margin-bottom: 12px;
+}
+
+.toolbar-input {
+  max-width: 220px;
 }
 
 .pagination {

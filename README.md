@@ -180,7 +180,7 @@ zyk-ai-agent/
 cd backend
 
 # 2. 创建Python虚拟环境（推荐）
-python3.14 -m venv backend/venv
+python3.14 -m venv venv
 source venv/bin/activate  # Linux/Mac
 # 或
 venv\Scripts\activate  # Windows

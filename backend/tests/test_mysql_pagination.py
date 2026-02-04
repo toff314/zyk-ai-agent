@@ -91,6 +91,25 @@ async def test_list_mysql_databases_paginates(async_session):
 
 
 @pytest.mark.asyncio
+async def test_list_mysql_databases_filters_by_name(async_session):
+    await seed_mysql_config(async_session)
+    await seed_mysql_databases(async_session, 12)
+
+    result = await list_mysql_databases(
+        refresh=False,
+        include_disabled=True,
+        page=1,
+        page_size=10,
+        name="db_03",
+        db=async_session,
+        current_user=None,
+    )
+
+    assert result["total"] == 1
+    assert [item["name"] for item in result["items"]] == ["db_03"]
+
+
+@pytest.mark.asyncio
 async def test_list_mysql_tables_paginates(async_session):
     await seed_mysql_config(async_session)
     await seed_mysql_tables(async_session, database="db_01", count=25)
@@ -111,6 +130,26 @@ async def test_list_mysql_tables_paginates(async_session):
     assert [item["name"] for item in result["items"]] == [
         f"table_{idx:02d}" for idx in range(21, 26)
     ]
+
+
+@pytest.mark.asyncio
+async def test_list_mysql_tables_filters_by_name(async_session):
+    await seed_mysql_config(async_session)
+    await seed_mysql_tables(async_session, database="db_01", count=12)
+
+    result = await list_mysql_tables(
+        database="db_01",
+        refresh=False,
+        include_disabled=True,
+        page=1,
+        page_size=10,
+        name="table_02",
+        db=async_session,
+        current_user=None,
+    )
+
+    assert result["total"] == 1
+    assert [item["name"] for item in result["items"]] == ["table_02"]
 
 
 @pytest.mark.asyncio
@@ -135,6 +174,25 @@ async def test_list_mysql_databases_manage_paginates(async_session):
 
 
 @pytest.mark.asyncio
+async def test_list_mysql_databases_manage_filters_by_name(async_session):
+    await seed_mysql_config(async_session)
+    await seed_mysql_databases(async_session, 10)
+
+    result = await list_mysql_databases_manage(
+        refresh=False,
+        include_disabled=True,
+        page=1,
+        page_size=10,
+        name="db_04",
+        db=async_session,
+        current_user=None,
+    )
+
+    assert result["total"] == 1
+    assert [item["name"] for item in result["items"]] == ["db_04"]
+
+
+@pytest.mark.asyncio
 async def test_list_mysql_tables_manage_paginates(async_session):
     await seed_mysql_config(async_session)
     await seed_mysql_tables(async_session, database="db_02", count=21)
@@ -155,3 +213,23 @@ async def test_list_mysql_tables_manage_paginates(async_session):
     assert [item["name"] for item in result["items"]] == [
         f"table_{idx:02d}" for idx in range(11, 21)
     ]
+
+
+@pytest.mark.asyncio
+async def test_list_mysql_tables_manage_filters_by_name(async_session):
+    await seed_mysql_config(async_session)
+    await seed_mysql_tables(async_session, database="db_02", count=12)
+
+    result = await list_mysql_tables_manage(
+        database="db_02",
+        refresh=False,
+        include_disabled=True,
+        page=1,
+        page_size=10,
+        name="table_01",
+        db=async_session,
+        current_user=None,
+    )
+
+    assert result["total"] == 1
+    assert [item["name"] for item in result["items"]] == ["table_01"]

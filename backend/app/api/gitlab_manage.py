@@ -1,7 +1,7 @@
 """GitLab management API."""
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from app.models.database import get_db, safe_commit
 from app.models.config import Config
 from app.models.gitlab_project import GitLabProject
@@ -46,6 +46,7 @@ async def _load_gitlab_config(db: AsyncSession) -> dict:
 @router.get("/projects")
 async def list_gitlab_projects(
     include_disabled: bool = Query(True),
+    name: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     db: AsyncSession = Depends(get_db),
@@ -54,6 +55,16 @@ async def list_gitlab_projects(
     query = select(GitLabProject).order_by(GitLabProject.path_with_namespace.asc())
     if not include_disabled:
         query = query.where(GitLabProject.enabled.is_(True))
+    if name:
+        trimmed = name.strip()
+        if trimmed:
+            pattern = f"%{trimmed}%"
+            query = query.where(
+                or_(
+                    GitLabProject.name.ilike(pattern),
+                    GitLabProject.path_with_namespace.ilike(pattern),
+                )
+            )
 
     total, items = await paginate_query(db, query, page, page_size)
 
@@ -110,6 +121,7 @@ async def update_gitlab_project(
 @router.get("/users")
 async def list_gitlab_users(
     include_disabled: bool = Query(True),
+    name: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     db: AsyncSession = Depends(get_db),
@@ -118,6 +130,16 @@ async def list_gitlab_users(
     query = select(GitLabUser).order_by(GitLabUser.username.asc())
     if not include_disabled:
         query = query.where(GitLabUser.enabled.is_(True))
+    if name:
+        trimmed = name.strip()
+        if trimmed:
+            pattern = f"%{trimmed}%"
+            query = query.where(
+                or_(
+                    GitLabUser.username.ilike(pattern),
+                    GitLabUser.name.ilike(pattern),
+                )
+            )
 
     total, users = await paginate_query(db, query, page, page_size)
 

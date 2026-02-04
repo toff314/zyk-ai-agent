@@ -91,4 +91,40 @@ describe('manage api pagination', () => {
       params: { database: 'db_01', refresh: false, include_disabled: true, page: 3, page_size: 10 }
     })
   })
+
+  it('passes name filter for gitlab projects', async () => {
+    getMock.mockResolvedValue(mockPageResponse)
+    await getGitlabProjects(true, 1, 20, 'project-01')
+
+    expect(getMock).toHaveBeenCalledWith('/gitlab/projects', {
+      params: { include_disabled: true, page: 1, page_size: 20, name: 'project-01' }
+    })
+  })
+
+  it('passes name filter for gitlab users', async () => {
+    getMock.mockResolvedValue(mockPageResponse)
+    await getGitlabUsers(true, 1, 20, 'user-01')
+
+    expect(getMock).toHaveBeenCalledWith('/gitlab/users', {
+      params: { include_disabled: true, page: 1, page_size: 20, name: 'user-01' }
+    })
+  })
+
+  it('passes name filter for mysql databases manage', async () => {
+    getMock.mockResolvedValue(mockPageResponse)
+    await getMysqlDatabasesManage(false, true, 1, 20, 'db_01')
+
+    expect(getMock).toHaveBeenCalledWith('/mysql/manage/databases', {
+      params: { refresh: false, include_disabled: true, page: 1, page_size: 20, name: 'db_01' }
+    })
+  })
+
+  it('passes name filter for mysql tables manage', async () => {
+    getMock.mockResolvedValue(mockPageResponse)
+    await getMysqlTablesManage('db_01', false, true, 1, 20, 'table_01')
+
+    expect(getMock).toHaveBeenCalledWith('/mysql/manage/tables', {
+      params: { database: 'db_01', refresh: false, include_disabled: true, page: 1, page_size: 20, name: 'table_01' }
+    })
+  })
 })

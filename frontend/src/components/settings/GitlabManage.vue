@@ -3,6 +3,15 @@
     <el-tabs v-model="activeTab">
       <el-tab-pane label="项目" name="projects">
         <div class="toolbar">
+          <el-input
+            v-model="projectNameFilter"
+            placeholder="按项目名搜索"
+            clearable
+            class="toolbar-input"
+            @clear="handleProjectSearch"
+            @keyup.enter="handleProjectSearch"
+          />
+          <el-button @click="handleProjectSearch">查询</el-button>
           <el-button type="primary" @click="loadProjects()">刷新</el-button>
         </div>
         <el-table :data="projects" v-loading="projectsLoading" row-key="id">
@@ -66,6 +75,15 @@
 
       <el-tab-pane label="用户" name="users">
         <div class="toolbar">
+          <el-input
+            v-model="userNameFilter"
+            placeholder="按用户名搜索"
+            clearable
+            class="toolbar-input"
+            @clear="handleUserSearch"
+            @keyup.enter="handleUserSearch"
+          />
+          <el-button @click="handleUserSearch">查询</el-button>
           <el-button type="primary" @click="loadUsers()">刷新</el-button>
         </div>
         <el-table :data="users" v-loading="usersLoading" row-key="id">
@@ -131,7 +149,7 @@
         <el-table-column prop="name" label="分支" min-width="200" />
         <el-table-column prop="commit_sha" label="提交" min-width="200" />
         <el-table-column prop="committed_date" label="提交时间" min-width="160" />
-        <el-table-column label="操作" width="140">
+        <el-table-column label="操作" width="200">
           <template #default="scope">
             <el-button size="small" @click="openCommits(scope.row)">查看提交</el-button>
           </template>
@@ -179,9 +197,21 @@
         <el-table-column prop="title" label="标题" min-width="240" />
         <el-table-column prop="author_name" label="作者" width="140" />
         <el-table-column prop="created_at" label="时间" width="160" />
-        <el-table-column label="操作" width="140">
+        <el-table-column label="操作" width="200">
           <template #default="scope">
-            <el-button size="small" @click="openDiffs(scope.row)">查看diff</el-button>
+            <div class="commit-actions">
+              <el-button size="small" :style="commitActionButtonStyle" @click="openDiffs(scope.row)">
+                查看diff
+              </el-button>
+              <el-button
+                size="small"
+                type="warning"
+                :style="commitActionButtonStyle"
+                @click="openCodeReview(scope.row)"
+              >
+                代码review
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -232,8 +262,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { usePagination, PAGE_SIZE_OPTIONS } from '@/composables/usePagination'
+import { buildCodeReviewPayload, buildDiffContent } from '@/utils/codeReview'
+import { commitActionButtonStyle } from '@/utils/commitActions'
+import { normalizeNameFilter } from '@/utils/nameFilter'
 import {
   getGitlabProjects,
   updateGitlabProject,
@@ -250,6 +284,7 @@ import {
 } from '@/api/manage'
 
 const activeTab = ref('projects')
+const router = useRouter()
 
 const projects = ref<GitlabProjectManage[]>([])
 const users = ref<GitlabUserManage[]>([])
@@ -258,6 +293,8 @@ const commits = ref<GitlabCommit[]>([])
 const diffs = ref<GitlabCommitDiff[]>([])
 const projectRemarkCache = ref<Record<number, string>>({})
 const userRemarkCache = ref<Record<number, string>>({})
+const projectNameFilter = ref('')
+const userNameFilter = ref('')
 
 const projectPager = usePagination()
 const userPager = usePagination()
@@ -324,10 +361,12 @@ const loadProjects = async () => {
   projectsLoading.value = true
   const requestedPage = projectPager.page.value
   try {
+    const nameFilter = normalizeNameFilter(projectNameFilter.value)
     const response = await getGitlabProjects(
       true,
       projectPager.page.value,
-      projectPager.pageSize.value
+      projectPager.pageSize.value,
+      nameFilter
     )
     projectPager.setTotal(response.total || 0)
     if (projectPager.page.value !== requestedPage) {
@@ -351,7 +390,13 @@ const loadUsers = async () => {
   usersLoading.value = true
   const requestedPage = userPager.page.value
   try {
-    const response = await getGitlabUsers(true, userPager.page.value, userPager.pageSize.value)
+    const nameFilter = normalizeNameFilter(userNameFilter.value)
+    const response = await getGitlabUsers(
+      true,
+      userPager.page.value,
+      userPager.pageSize.value,
+      nameFilter
+    )
     userPager.setTotal(response.total || 0)
     if (userPager.page.value !== requestedPage) {
       await loadUsers()
@@ -501,11 +546,53 @@ const openDiffs = async (commit: GitlabCommit) => {
   }
 }
 
+const openCodeReview = async (commit: GitlabCommit) => {
+  if (!currentProject.value) {
+    ElMessage.error('请先选择项目')
+    return
+  }
+  try {
+    const diffItems = await getGitlabCommitDiffs(currentProject.value.id, commit.commit_sha, true)
+    if (diffItems.length === 0) {
+      ElMessage.warning('未获取到Diff内容')
+      return
+    }
+
+    const diffContent = buildDiffContent(diffItems)
+    const title = commit.title ? `${commit.commit_sha} ${commit.title}` : commit.commit_sha
+    const payload = buildCodeReviewPayload({ title, diff: diffContent })
+
+    sessionStorage.setItem(
+      'pending_chat_request',
+      JSON.stringify({
+        mode: 'code_review',
+        message: payload.message,
+        review_diff: payload.review_diff,
+        review_notice: payload.review_notice
+      })
+    )
+
+    await router.push('/')
+  } catch (error: any) {
+    ElMessage.error(error.message || '代码审查请求失败')
+  }
+}
+
 const handleProjectPageChange = () => {
   loadProjects()
 }
 
+const handleProjectSearch = () => {
+  projectPager.resetPage()
+  loadProjects()
+}
+
 const handleUserPageChange = () => {
+  loadUsers()
+}
+
+const handleUserSearch = () => {
+  userPager.resetPage()
   loadUsers()
 }
 
@@ -595,13 +682,29 @@ onMounted(() => {
 .toolbar {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   margin-bottom: 12px;
 }
 
 .drawer-toolbar {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   margin-bottom: 12px;
+}
+
+.toolbar-input {
+  max-width: 220px;
+}
+
+.commit-actions {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .pagination {

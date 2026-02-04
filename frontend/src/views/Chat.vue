@@ -173,6 +173,7 @@ const isLoggedIn = computed(() => !!userStore.user)
 
 onMounted(async () => {
   await loadConversations()
+  await consumePendingChatRequest()
 })
 
 const loadConversations = async () => {
@@ -229,8 +230,8 @@ const deleteConversation = async (id: number) => {
   }
 }
 
-const sendMessage = async () => {
-  const message = inputMessage.value.trim()
+const sendMessageWithPayload = async (payload: { message: string; review_diff?: string; review_notice?: string }) => {
+  const message = payload.message.trim()
   if (!message) return
 
   inputMessage.value = ''
@@ -265,7 +266,9 @@ const sendMessage = async () => {
     const chatData: ChatRequest = {
       message,
       mode: currentMode.value,
-      conversation_id: currentConversationId.value
+      conversation_id: currentConversationId.value,
+      review_diff: payload.review_diff,
+      review_notice: payload.review_notice
     }
 
     let fullResponse = ''
@@ -316,6 +319,11 @@ const sendMessage = async () => {
   }
 }
 
+const sendMessage = async () => {
+  if (loading.value) return
+  await sendMessageWithPayload({ message: inputMessage.value })
+}
+
 const handleInput = async (value: string) => {
   // 检测@符号
   const atMatch = value.lastIndexOf('@', cursorPosition.value - 1)
@@ -353,7 +361,8 @@ const handleInput = async (value: string) => {
           const tables = mysqlTables.value[databaseName] || []
           const tableItems = tables.map((table: MysqlTable) => ({
             id: `${databaseName}.${table.name}`,
-            name: table.name,
+            name: table.remark || table.name,
+            raw_name: table.name,
             type: 'table',
             description: table.comment || table.type || databaseName
           }))
@@ -377,7 +386,8 @@ const handleInput = async (value: string) => {
           }
           mentionItems.value = mysqlDatabases.value.map((db: MysqlDatabase) => ({
             id: db.name,
-            name: db.name,
+            name: db.remark || db.name,
+            raw_name: db.name,
             type: 'database'
           }))
         }
@@ -387,7 +397,7 @@ const handleInput = async (value: string) => {
           const users = await getGitLabUsers()
           mentionItems.value = users.map((u: GitLabUser) => ({
             id: u.id,
-            name: u.name || u.username,
+            name: u.remark || u.name || u.username,
             type: 'user',
             avatar_url: u.avatar_url,
             description: `本周提交: ${u.commits_week} 次`
@@ -417,7 +427,7 @@ const handleMentionSelect = (item: any) => {
       mentionVisible.value = false
       return
     }
-    selectedDatabase.value = item.name
+    selectedDatabase.value = item.raw_name || item.name
   }
   mentionText = `@${item.name} `
   
@@ -447,6 +457,26 @@ const scrollToBottom = () => {
       messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
     }
   })
+}
+
+const consumePendingChatRequest = async () => {
+  const raw = sessionStorage.getItem('pending_chat_request')
+  if (!raw) return
+
+  sessionStorage.removeItem('pending_chat_request')
+  try {
+    const payload = JSON.parse(raw)
+    if (!payload?.message) return
+    createNewChat()
+    currentMode.value = payload.mode || 'code_review'
+    await sendMessageWithPayload({
+      message: payload.message,
+      review_diff: payload.review_diff,
+      review_notice: payload.review_notice
+    })
+  } catch (error) {
+    console.error('解析待发送请求失败:', error)
+  }
 }
 
 const getModeName = (mode: string) => {

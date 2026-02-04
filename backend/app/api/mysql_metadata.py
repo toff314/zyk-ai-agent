@@ -53,6 +53,7 @@ async def _sync_tables(db: AsyncSession, mysql_config: dict, database: str) -> l
 async def list_mysql_databases(
     refresh: bool = Query(False),
     include_disabled: bool = Query(False),
+    name: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     db: AsyncSession = Depends(get_db),
@@ -69,10 +70,14 @@ async def list_mysql_databases(
     query = select(MySQLDatabase).order_by(MySQLDatabase.name.asc())
     if not include_disabled:
         query = query.where(MySQLDatabase.enabled.is_(True))
+    if name:
+        trimmed = name.strip()
+        if trimmed:
+            query = query.where(MySQLDatabase.name.ilike(f"%{trimmed}%"))
 
     total, items = await paginate_query(db, query, page, page_size)
 
-    if not items and total == 0:
+    if not items and total == 0 and not name:
         await _sync_databases(db, mysql_config)
         total, items = await paginate_query(db, query, page, page_size)
 
@@ -97,6 +102,7 @@ async def list_mysql_tables(
     database: str = Query(..., min_length=1),
     refresh: bool = Query(False),
     include_disabled: bool = Query(False),
+    name: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     db: AsyncSession = Depends(get_db),
@@ -117,10 +123,14 @@ async def list_mysql_tables(
     )
     if not include_disabled:
         query = query.where(MySQLTable.enabled.is_(True))
+    if name:
+        trimmed = name.strip()
+        if trimmed:
+            query = query.where(MySQLTable.table_name.ilike(f"%{trimmed}%"))
 
     total, items = await paginate_query(db, query, page, page_size)
 
-    if not items and total == 0:
+    if not items and total == 0 and not name:
         await _sync_tables(db, mysql_config, database)
         total, items = await paginate_query(db, query, page, page_size)
 
@@ -147,6 +157,7 @@ async def list_mysql_tables(
 async def list_mysql_databases_manage(
     refresh: bool = Query(False),
     include_disabled: bool = Query(True),
+    name: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     db: AsyncSession = Depends(get_db),
@@ -159,6 +170,10 @@ async def list_mysql_databases_manage(
     query = select(MySQLDatabase).order_by(MySQLDatabase.name.asc())
     if not include_disabled:
         query = query.where(MySQLDatabase.enabled.is_(True))
+    if name:
+        trimmed = name.strip()
+        if trimmed:
+            query = query.where(MySQLDatabase.name.ilike(f"%{trimmed}%"))
 
     total, items = await paginate_query(db, query, page, page_size)
 
@@ -190,6 +205,7 @@ async def list_mysql_tables_manage(
     database: str = Query(..., min_length=1),
     refresh: bool = Query(False),
     include_disabled: bool = Query(True),
+    name: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     db: AsyncSession = Depends(get_db),
@@ -206,6 +222,10 @@ async def list_mysql_tables_manage(
     )
     if not include_disabled:
         query = query.where(MySQLTable.enabled.is_(True))
+    if name:
+        trimmed = name.strip()
+        if trimmed:
+            query = query.where(MySQLTable.table_name.ilike(f"%{trimmed}%"))
 
     total, items = await paginate_query(db, query, page, page_size)
 

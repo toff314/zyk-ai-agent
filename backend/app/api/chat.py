@@ -162,16 +162,9 @@ async def _resolve_gitlab_mentions(db: AsyncSession, message: str) -> str:
         if user.remark:
             alias_map[user.remark] = user.username
 
-    def _replace(match: re.Match) -> str:
-        token = match.group(1)
-        actual = alias_map.get(token)
-        if not actual:
-            return ""
-        return f"@{actual}"
+    from app.utils.gitlab_mentions import normalize_gitlab_mentions
 
-    cleaned = AT_TOKEN_PATTERN.sub(_replace, message)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    return cleaned
+    return normalize_gitlab_mentions(message, alias_map)
 
 
 async def process_message(

@@ -84,12 +84,16 @@ export interface GitLabUser {
   username: string
   name: string
   avatar_url: string
+  remark?: string
+  enabled?: boolean
   commits_week: number
   commits_month: number
 }
 
 export interface MysqlDatabase {
   name: string
+  remark?: string
+  enabled?: boolean
 }
 
 export interface MysqlTable {
@@ -97,6 +101,8 @@ export interface MysqlTable {
   name: string
   type?: string
   comment?: string
+  remark?: string
+  enabled?: boolean
 }
 
 // 对话请求类型
@@ -104,6 +110,8 @@ export interface ChatRequest {
   message: string
   mode: 'normal' | 'data_analysis' | 'code_review'
   conversation_id?: number | null
+  review_diff?: string
+  review_notice?: string
 }
 
 // 流式响应类型

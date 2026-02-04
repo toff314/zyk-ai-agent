@@ -135,6 +135,19 @@ def list_databases() -> List[Dict[str, Any]]:
             # 过滤掉系统数据库
             system_dbs = ['information_schema', 'performance_schema', 'mysql', 'sys']
             user_dbs = [db for db in all_dbs if db['database'] not in system_dbs]
+            try:
+                cursor.execute(
+                    "SELECT TABLE_SCHEMA, MAX(COALESCE(UPDATE_TIME, CREATE_TIME)) AS last_time "
+                    "FROM information_schema.TABLES GROUP BY TABLE_SCHEMA"
+                )
+                time_rows = cursor.fetchall()
+                time_map = {
+                    row.get("TABLE_SCHEMA", row.get("table_schema")): row.get("last_time")
+                    for row in time_rows
+                }
+            except Exception:
+                time_map = {}
+            user_dbs.sort(key=lambda item: time_map.get(item["database"]) or "", reverse=True)
             return user_dbs
     except Exception as e:
         raise Exception(f"获取数据库列表失败: {str(e)}")
@@ -152,12 +165,20 @@ def list_tables(database: Optional[str] = None) -> List[Dict[str, Any]]:
         表列表，每个表包含表名、类型和注释
     """
     if database:
-        sql = f"SELECT TABLE_NAME, TABLE_TYPE, TABLE_COMMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = '{database}'"
+        sql = (
+            "SELECT TABLE_NAME, TABLE_TYPE, TABLE_COMMENT, CREATE_TIME, UPDATE_TIME "
+            f"FROM information_schema.TABLES WHERE TABLE_SCHEMA = '{database}' "
+            "ORDER BY COALESCE(UPDATE_TIME, CREATE_TIME) DESC"
+        )
     else:
         current_db = os.getenv('MYSQL_DATABASE')
         if not current_db:
             raise Exception("未指定数据库且环境变量 MYSQL_DATABASE 未设置")
-        sql = f"SELECT TABLE_NAME, TABLE_TYPE, TABLE_COMMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = '{current_db}'"
+        sql = (
+            "SELECT TABLE_NAME, TABLE_TYPE, TABLE_COMMENT, CREATE_TIME, UPDATE_TIME "
+            f"FROM information_schema.TABLES WHERE TABLE_SCHEMA = '{current_db}' "
+            "ORDER BY COALESCE(UPDATE_TIME, CREATE_TIME) DESC"
+        )
     
     conn = db.connect()
     try:
@@ -230,6 +251,14 @@ def show_table_status(database: Optional[str] = None) -> List[Dict[str, Any]]:
         with conn.cursor() as cursor:
             cursor.execute(sql)
             result = cursor.fetchall()
+            result.sort(
+                key=lambda item: item.get("Update_time")
+                or item.get("Create_time")
+                or item.get("update_time")
+                or item.get("create_time")
+                or "",
+                reverse=True,
+            )
             return result
     except Exception as e:
         raise Exception(f"获取表状态失败: {str(e)}")

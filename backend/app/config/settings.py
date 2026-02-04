@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # GitLab配置
     GITLAB_URL: str = ""
     GITLAB_TOKEN: str = ""
+    GITLAB_MCP_TIMEOUT: int = 120
 
     # 浏览器MCP配置（默认使用官方 Playwright MCP Server）
     BROWSER_MCP_COMMAND: str = "npx -y @playwright/mcp@latest"

@@ -3,8 +3,8 @@
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, users, conversations, chat, config, mysql_metadata
-from app.models.database import init_db, safe_commit
+from app.api import auth, users, conversations, chat, config, mysql_metadata, gitlab_manage
+from app.models.database import init_db, apply_sqlite_migrations, safe_commit
 from app.utils.security import get_password_hash
 from app.models.user import User
 from app.models.config import Config
@@ -39,6 +39,7 @@ app.include_router(conversations.router)
 app.include_router(chat.router)
 app.include_router(config.router)
 app.include_router(mysql_metadata.router)
+app.include_router(gitlab_manage.router)
 
 
 @app.on_event("startup")
@@ -48,6 +49,7 @@ async def startup_event():
     
     # 初始化数据库
     await init_db()
+    await apply_sqlite_migrations()
     logger.info("数据库初始化完成")
     
     # 创建默认管理员用户（如果不存在）
@@ -91,7 +93,7 @@ async def startup_event():
         if not gitlab_config_result.scalar_one_or_none():
             gitlab_config = Config(
                 key="gitlab_config",
-                value='{"url": "", "token": ""}'
+                value='{"url": "", "token": "", "groups": ""}'
             )
             db.add(gitlab_config)
             logger.info("默认GitLab配置已创建")

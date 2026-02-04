@@ -8,6 +8,8 @@ export interface ChatRequest {
   message: string
   mode: 'normal' | 'data_analysis' | 'code_review'
   conversation_id?: number
+  review_diff?: string
+  review_notice?: string
 }
 
 export interface ChatResponse {
@@ -38,6 +40,8 @@ export interface GitLabUser {
 
 export interface MysqlDatabase {
   name: string
+  remark?: string
+  enabled?: boolean
 }
 
 export interface MysqlTable {
@@ -45,6 +49,8 @@ export interface MysqlTable {
   name: string
   type?: string
   comment?: string
+  remark?: string
+  enabled?: boolean
 }
 
 /**

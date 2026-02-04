@@ -13,6 +13,8 @@ logging.basicConfig(
     stream=sys.stderr,
 )
 
+logger = logging.getLogger("gitlab-mcp-server")
+
 load_dotenv()
 
 mcp = FastMCP("GitLab MCP Server")
@@ -51,10 +53,16 @@ def _connect_gitlab(gitlab_module=gitlab):
     url = os.getenv("GITLAB_URL")
     token = os.getenv("GITLAB_TOKEN")
     api_version = os.getenv("GITLAB_API_VERSION", "4")
+    timeout = float(os.getenv("GITLAB_TIMEOUT", "120"))
     if not url or not token:
         raise Exception("Missing GITLAB_URL or GITLAB_TOKEN")
 
-    _gl = gitlab_module.Gitlab(url=url, private_token=token, api_version=api_version)
+    _gl = gitlab_module.Gitlab(
+        url=url,
+        private_token=token,
+        api_version=api_version,
+        timeout=timeout,
+    )
     _gl.auth()
     return _gl
 
@@ -88,7 +96,7 @@ def list_projects():
     else:
         projects = _list_all(gl.projects, per_page)
 
-    return [
+    items = [
         {
             "id": project.id,
             "name_with_namespace": project.name_with_namespace,
@@ -98,6 +106,8 @@ def list_projects():
         }
         for project in projects
     ]
+    items.sort(key=lambda item: item.get("last_activity_at") or "", reverse=True)
+    return items
 
 
 @mcp.tool()
@@ -105,19 +115,92 @@ def list_users():
     per_page = int(os.getenv("GITLAB_PER_PAGE", DEFAULT_PER_PAGE))
     gl = _connect_gitlab()
     users = _list_all(gl.users, per_page)
-    return [
+    users.sort(
+        key=lambda user: (
+            getattr(user, "last_activity_on", None)
+            or getattr(user, "created_at", None)
+            or ""
+        ),
+        reverse=True,
+    )
+    items = [
         {
             "id": user.id,
             "name": user.name,
             "username": user.username,
             "state": user.state,
+            "avatar_url": getattr(user, "avatar_url", None),
         }
         for user in users
     ]
+    return items
 
 
 @mcp.tool()
-def list_commits(project_id: int, limit: int = DEFAULT_LIMIT):
+def get_user_commits(username: str, project_ids: List[int], limit: int = DEFAULT_LIMIT):
+    if not username:
+        raise Exception("username is required")
+    if not project_ids:
+        raise Exception("project_ids is required")
+
+    logger.warning(
+        "get_user_commits username=%s limit=%s projects=%s",
+        username,
+        limit,
+        len(project_ids),
+    )
+
+    per_page = int(os.getenv("GITLAB_PER_PAGE", DEFAULT_PER_PAGE))
+    gl = _connect_gitlab()
+
+    users = gl.users.list(username=username)
+    if not users:
+        return []
+
+    user = users[0]
+    commits = []
+    remaining = _clamp_limit(limit)
+    for project_id in project_ids:
+        if remaining <= 0:
+            break
+        try:
+            project = gl.projects.get(project_id)
+        except Exception:
+            continue
+        try:
+            project_commits = project.commits.list(page=1, per_page=min(per_page, remaining))
+        except Exception:
+            continue
+
+        for commit in project_commits:
+            author_name = getattr(commit, "author_name", None)
+            author_email = getattr(commit, "author_email", None)
+            user_name = getattr(user, "name", None)
+            user_email = getattr(user, "email", None)
+            if author_name != user_name and author_email != user_email:
+                continue
+            authored_date = getattr(commit, "authored_date", None) or getattr(commit, "created_at", None)
+            commits.append(
+                {
+                    "id": commit.id,
+                    "title": commit.title,
+                    "message": getattr(commit, "message", None),
+                    "author_name": author_name,
+                    "authored_date": authored_date,
+                    "project_id": project_id,
+                    "project_name": getattr(project, "name", None),
+                    "web_url": getattr(commit, "web_url", None),
+                }
+            )
+
+        remaining = _clamp_limit(limit) - len(commits)
+
+    commits.sort(key=lambda item: item.get("authored_date") or "", reverse=True)
+    return commits[: _clamp_limit(limit)]
+
+
+@mcp.tool()
+def list_commits(project_id: int, limit: int = DEFAULT_LIMIT, ref_name: Optional[str] = None):
     per_page = int(os.getenv("GITLAB_PER_PAGE", DEFAULT_PER_PAGE))
     gl = _connect_gitlab()
 
@@ -126,9 +209,10 @@ def list_commits(project_id: int, limit: int = DEFAULT_LIMIT):
     page = 1
     while remaining > 0:
         page_size = min(per_page, remaining)
-        page_items = gl.projects.get(project_id).commits.list(
-            page=page, per_page=page_size
-        )
+        list_kwargs = {"page": page, "per_page": page_size}
+        if ref_name:
+            list_kwargs["ref_name"] = ref_name
+        page_items = gl.projects.get(project_id).commits.list(**list_kwargs)
         if not page_items:
             break
         if len(page_items) > remaining:
@@ -141,7 +225,7 @@ def list_commits(project_id: int, limit: int = DEFAULT_LIMIT):
             break
         page += 1
 
-    return [
+    items = [
         {
             "id": commit.id,
             "short_id": commit.short_id,
@@ -152,6 +236,26 @@ def list_commits(project_id: int, limit: int = DEFAULT_LIMIT):
         }
         for commit in commits
     ]
+    items.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+    return items
+
+
+@mcp.tool()
+def list_branches(project_id: int):
+    per_page = int(os.getenv("GITLAB_PER_PAGE", DEFAULT_PER_PAGE))
+    gl = _connect_gitlab()
+    project = gl.projects.get(project_id)
+    branches = _list_all(project.branches, per_page)
+    items = [
+        {
+            "name": branch.name,
+            "commit_sha": branch.commit.get("id") if hasattr(branch, "commit") else None,
+            "committed_date": branch.commit.get("committed_date") if hasattr(branch, "commit") else None,
+        }
+        for branch in branches
+    ]
+    items.sort(key=lambda item: item.get("committed_date") or "", reverse=True)
+    return items
 
 
 @mcp.tool()

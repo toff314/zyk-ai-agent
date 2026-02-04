@@ -8,8 +8,10 @@ import logging
 from .mcp_mysql import mcp_mysql_client
 from .mcp_browser import mcp_browser_client
 from .gitlab import gitlab_service
-from app.agents.prompts import CHAT_PROMPT
+from app.agents.prompts import CHAT_PROMPT, DATA_ANALYSIS_PROMPT
 from app.utils.code_review_prompt import render_code_review_prompt
+from app.utils.gitlab_commit_lookup import resolve_commit_project_id
+from app.utils.gitlab_username import normalize_gitlab_username
 
 logger = logging.getLogger(__name__)
 
@@ -106,86 +108,105 @@ class DataAnalysisAgent(AgentService):
             temperature=0.7
         )
         
+        async def _load_mysql_config():
+            from app.models.database import get_db
+            from app.models.config import Config
+            from sqlalchemy import select
+            import json
+
+            db_gen = get_db()
+            db = await db_gen.__anext__()
+            try:
+                result = await db.execute(select(Config).where(Config.key == "mysql_config"))
+                config = result.scalar_one_or_none()
+                if not config:
+                    return None, "错误：未配置MySQL连接信息"
+                mysql_config = json.loads(config.value)
+                if not mysql_config.get("enabled"):
+                    return None, "错误：MySQL未启用"
+                return mysql_config, None
+            finally:
+                try:
+                    await db_gen.aclose()
+                except Exception:
+                    pass
+
         # 创建MySQL查询工具
         async def execute_mysql_query(query: str) -> str:
             """执行MySQL查询"""
             try:
-                from sqlalchemy.ext.asyncio import AsyncSession
-                from app.models.database import get_db
-                from app.models.config import Config
-                from sqlalchemy import select
-                import json
-                
-                # 异步获取数据库会话和MySQL配置
-                db_gen = get_db()
-                db = await db_gen.__anext__()
-                
-                try:
-                    # 获取MySQL配置
-                    result = await db.execute(select(Config).where(Config.key == "mysql_config"))
-                    config = result.scalar_one_or_none()
-                    if not config:
-                        return "错误：未配置MySQL连接信息"
-                    
-                    mysql_config = json.loads(config.value)
-                    if not mysql_config.get("enabled"):
-                        return "错误：MySQL未启用"
-                    
-                    # 使用MCP MySQL客户端执行查询，传递配置参数
-                    results = await mcp_mysql_client.execute_query(query, mysql_config=mysql_config)
-                    return self._format_results(results)
-                finally:
-                    try:
-                        await db_gen.aclose()
-                    except:
-                        pass
+                mysql_config, error_message = await _load_mysql_config()
+                if error_message:
+                    return error_message
+
+                results = await mcp_mysql_client.execute_query(query, mysql_config=mysql_config)
+                return self._format_results(results)
             except Exception as e:
                 import traceback
                 logger.error(f"执行MySQL查询失败: {str(e)}\n{traceback.format_exc()}")
                 return f"查询失败: {str(e)}"
+
+        async def list_databases() -> list | str:
+            """列出数据库"""
+            try:
+                mysql_config, error_message = await _load_mysql_config()
+                if error_message:
+                    return error_message
+                return await mcp_mysql_client.list_databases(mysql_config=mysql_config)
+            except Exception as e:
+                return f"获取数据库列表失败: {str(e)}"
+
+        async def list_tables(database: str | None = None) -> list | str:
+            """列出表"""
+            try:
+                mysql_config, error_message = await _load_mysql_config()
+                if error_message:
+                    return error_message
+                return await mcp_mysql_client.list_tables(database, mysql_config=mysql_config)
+            except Exception as e:
+                return f"获取表列表失败: {str(e)}"
+
+        async def describe_table(table_name: str, database: str | None = None) -> list | str:
+            """查看表结构"""
+            try:
+                mysql_config, error_message = await _load_mysql_config()
+                if error_message:
+                    return error_message
+                return await mcp_mysql_client.describe_table(table_name, database, mysql_config=mysql_config)
+            except Exception as e:
+                return f"获取表结构失败: {str(e)}"
+
+        async def show_table_status(database: str | None = None) -> list | str:
+            """查看表状态"""
+            try:
+                mysql_config, error_message = await _load_mysql_config()
+                if error_message:
+                    return error_message
+                return await mcp_mysql_client.show_table_status(database, mysql_config=mysql_config)
+            except Exception as e:
+                return f"获取表状态失败: {str(e)}"
+
+        async def get_table_indexes(table_name: str, database: str | None = None) -> list | str:
+            """查看索引"""
+            try:
+                mysql_config, error_message = await _load_mysql_config()
+                if error_message:
+                    return error_message
+                return await mcp_mysql_client.get_table_indexes(table_name, database, mysql_config=mysql_config)
+            except Exception as e:
+                return f"获取索引信息失败: {str(e)}"
         
-        # 系统提示词
-        system_prompt = """
-        你是一个专业的数据分析师，专注于中药代煎平台的数据分析。
-
-        ## 你的能力
-        - 分析社区医院订单情况
-        - 统计各类药品消耗
-        - 评估代煎中心员工工作效率
-        - 生成医院排名、地区患者排名
-        - 分析订单趋势变化
-
-        ## 可用工具
-        - execute_mysql_query：用于查询数据库中的业务数据
-
-        ## 回答要求
-        1. 首先使用execute_mysql_query工具获取数据
-        2. 基于查询结果提供准确的数据分析
-        3. 使用表格和图表展示数据（Markdown格式）
-        4. 提供可操作的业务建议
-        5. 语言简洁专业，易于理解
-
-        ## 额外上下文（可选）
-        系统可能会在用户问题前追加以下结构：
-        [DB_TABLE_CONTEXT]
-        {"databases":["db1"],"tables":["t1","t2"],"mapping":{"db1":["t1","t2"]}}
-        [/DB_TABLE_CONTEXT]
-
-        使用要求：
-        - databases/tables 来自 @ 解析，名称保持原样，不要做规范化或改写
-        - 如果提供了 database 和 tables，优先使用全限定名（`db`.`table`）生成 SQL
-        - 如果只提供了 database 而没有 tables，先查询该库的表结构或表列表再继续分析
-        - 查询表结构时优先使用 DESCRIBE 或 SHOW CREATE TABLE
-        - 不要臆造不存在的库或表
-
-        ## 主要表结构（参考）
-        - orders（订单表）：包含医院、药品、时间等信息
-        - medicines（药品表）：药品信息
-        - hospitals（医院表）：医院信息
-        - employees（员工表）：员工信息
-        """
-        
-        await super().initialize(system_prompt, [execute_mysql_query])
+        await super().initialize(
+            DATA_ANALYSIS_PROMPT,
+            [
+                execute_mysql_query,
+                list_databases,
+                list_tables,
+                describe_table,
+                show_table_status,
+                get_table_indexes,
+            ],
+        )
     
     def _format_results(self, results: list) -> str:
         """格式化查询结果"""
@@ -224,23 +245,89 @@ class CodeReviewAgent(AgentService):
         async def get_user_commits(username: str) -> str:
             """获取用户提交记录"""
             try:
-                commits = await gitlab_service.get_user_commits(username, limit=5)
+                normalized = normalize_gitlab_username(username)
+                if not normalized:
+                    return "没有找到提交记录"
+                commits = await gitlab_service.get_user_commits(normalized, limit=5)
                 return self._format_commits(commits)
             except Exception as e:
                 return f"获取提交失败: {str(e)}"
         
         # 创建查看代码差异的工具
-        async def get_commit_diff(commit_id: str) -> str:
+        async def get_commit_diff(commit_id: str, project_id: int | None = None) -> str:
             """查看提交的代码差异"""
             try:
-                diff = await gitlab_service.get_commit_diff(commit_id)
+                resolved_project_id = project_id
+                if resolved_project_id is None:
+                    from app.models.database import get_db
+
+                    db_gen = get_db()
+                    db = await db_gen.__anext__()
+                    try:
+                        resolved_project_id = await resolve_commit_project_id(db, commit_id)
+                    finally:
+                        try:
+                            await db_gen.aclose()
+                        except Exception:
+                            pass
+
+                if resolved_project_id is None:
+                    return "获取代码差异失败: 未提供project_id，且未在本地记录中找到该commit。"
+
+                diff = await gitlab_service.get_commit_diff(commit_id, resolved_project_id)
                 return diff
             except Exception as e:
                 return f"获取代码差异失败: {str(e)}"
-        
+
+        async def list_projects() -> list:
+            """列出项目"""
+            try:
+                if not gitlab_service:
+                    return []
+                return await gitlab_service.list_projects()
+            except Exception as e:
+                return [f"获取项目失败: {str(e)}"]
+
+        async def list_users() -> list:
+            """列出用户"""
+            try:
+                if not gitlab_service:
+                    return []
+                return await gitlab_service.list_users()
+            except Exception as e:
+                return [f"获取用户失败: {str(e)}"]
+
+        async def list_branches(project_id: int) -> list:
+            """列出分支"""
+            try:
+                if not gitlab_service:
+                    return []
+                return await gitlab_service.list_branches(project_id)
+            except Exception as e:
+                return [f"获取分支失败: {str(e)}"]
+
+        async def list_commits(project_id: int, limit: int = 20, ref_name: str | None = None) -> list:
+            """列出提交"""
+            try:
+                if not gitlab_service:
+                    return []
+                return await gitlab_service.list_commits(project_id, limit=limit, ref_name=ref_name)
+            except Exception as e:
+                return [f"获取提交失败: {str(e)}"]
+
         final_prompt = system_prompt or render_code_review_prompt("", "")
 
-        await super().initialize(final_prompt, [get_user_commits, get_commit_diff])
+        await super().initialize(
+            final_prompt,
+            [
+                get_user_commits,
+                get_commit_diff,
+                list_projects,
+                list_users,
+                list_branches,
+                list_commits,
+            ],
+        )
     
     def _format_commits(self, commits: list) -> str:
         """格式化提交记录"""

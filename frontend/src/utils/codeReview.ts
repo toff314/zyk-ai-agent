@@ -1,3 +1,19 @@
+type CommitDiffLike = {
+  old_path?: string
+  new_path?: string
+  diff?: string
+}
+
+export function buildDiffContent(items: CommitDiffLike[]) {
+  return items
+    .map((diff) => {
+      const header = diff.new_path || diff.old_path || 'unknown'
+      const body = diff.diff || ''
+      return `# ${header}\n${body}`
+    })
+    .join('\n\n')
+}
+
 export function buildCodeReviewPayload({ title, diff }: { title: string; diff: string }) {
   const MAX = 20000
   const HEAD = 10000

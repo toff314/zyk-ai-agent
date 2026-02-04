@@ -2,7 +2,7 @@
 MySQL表元数据模型
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Index
+from sqlalchemy import Column, Integer, String, DateTime, Index, Boolean
 from app.models.database import Base
 
 
@@ -15,6 +15,8 @@ class MySQLTable(Base):
     table_name = Column(String(255), nullable=False, index=True)
     table_type = Column(String(50), nullable=True)
     table_comment = Column(String(500), nullable=True)
+    remark = Column(String(255), nullable=True)
+    enabled = Column(Boolean, default=True, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (

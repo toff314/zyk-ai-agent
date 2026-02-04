@@ -4,6 +4,7 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.exc import OperationalError
+from sqlalchemy import text
 import asyncio
 import logging
 from functools import wraps
@@ -81,12 +82,54 @@ async def init_db():
         from app.models.conversation import Conversation
         from app.models.message import Message
         from app.models.gitlab_user import GitLabUser
+        from app.models.gitlab_project import GitLabProject
+        from app.models.gitlab_branch import GitLabBranch
+        from app.models.gitlab_commit import GitLabCommit
+        from app.models.gitlab_commit_diff import GitLabCommitDiff
         from app.models.config import Config
         from app.models.mysql_database import MySQLDatabase
         from app.models.mysql_table import MySQLTable
         
         # 创建所有表
         await conn.run_sync(Base.metadata.create_all)
+
+
+async def apply_sqlite_migrations():
+    """为SQLite旧库补齐新增字段"""
+    if not settings.DATABASE_URL.startswith("sqlite"):
+        return
+
+    async with engine.begin() as conn:
+        table_columns: dict[str, dict[str, str]] = {
+            "gitlab_users": {
+                "remark": "TEXT",
+                "enabled": "INTEGER DEFAULT 1",
+                "commits_week": "INTEGER DEFAULT 0",
+                "commits_month": "INTEGER DEFAULT 0",
+            },
+            "gitlab_projects": {
+                "remark": "TEXT",
+                "enabled": "INTEGER DEFAULT 1",
+            },
+            "mysql_databases": {
+                "remark": "TEXT",
+                "enabled": "INTEGER DEFAULT 1",
+            },
+            "mysql_tables": {
+                "remark": "TEXT",
+                "enabled": "INTEGER DEFAULT 1",
+            },
+        }
+
+        for table, columns in table_columns.items():
+            result = await conn.execute(text(f"PRAGMA table_info('{table}')"))
+            existing = {row._mapping["name"] for row in result}
+            if not existing:
+                continue
+            for name, definition in columns.items():
+                if name in existing:
+                    continue
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}"))
 
 
 def retry_on_locked(max_retries: int = 3, delay: float = 0.1):

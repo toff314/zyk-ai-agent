@@ -2,7 +2,7 @@
 GitLab用户模型
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Index
+from sqlalchemy import Column, Integer, String, DateTime, Index, Boolean
 from app.models.database import Base
 
 
@@ -14,6 +14,8 @@ class GitLabUser(Base):
     username = Column(String(100), unique=True, nullable=False, index=True)
     name = Column(String(200))
     avatar_url = Column(String(500))
+    remark = Column(String(255), nullable=True)
+    enabled = Column(Boolean, default=True, nullable=False)
     commits_week = Column(Integer, default=0)
     commits_month = Column(Integer, default=0)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

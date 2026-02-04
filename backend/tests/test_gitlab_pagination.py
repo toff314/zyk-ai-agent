@@ -127,6 +127,40 @@ async def test_list_gitlab_projects_paginates(async_session):
 
 
 @pytest.mark.asyncio
+async def test_list_gitlab_users_filters_by_name(async_session):
+    await seed_gitlab_users(async_session, 10)
+
+    result = await list_gitlab_users(
+        include_disabled=True,
+        page=1,
+        page_size=10,
+        name="User 03",
+        db=async_session,
+        current_user=None,
+    )
+
+    assert result["total"] == 1
+    assert [item["username"] for item in result["items"]] == ["user-03"]
+
+
+@pytest.mark.asyncio
+async def test_list_gitlab_projects_filters_by_name(async_session):
+    await seed_gitlab_projects(async_session, 10)
+
+    result = await list_gitlab_projects(
+        include_disabled=True,
+        page=1,
+        page_size=10,
+        name="group/project-04",
+        db=async_session,
+        current_user=None,
+    )
+
+    assert result["total"] == 1
+    assert [item["path_with_namespace"] for item in result["items"]] == ["group/project-04"]
+
+
+@pytest.mark.asyncio
 async def test_list_gitlab_branches_paginates(async_session):
     await seed_gitlab_branches(async_session, project_id=1, count=25)
 
