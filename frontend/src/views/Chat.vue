@@ -378,10 +378,31 @@ const handleInput = async (value: string) => {
     const line = lines.length
     const char = lines[lines.length - 1].length
 
-    mentionPosition.value = {
-      x: rect.left + char * 8 + 20,
-      y: rect.top + line * 24 + 60
+    const charWidth = 8
+    const lineHeight = 22
+    const pickerWidth = 320
+    const pickerHeight = 300
+    const viewportPadding = 12
+
+    const preferredX = rect.left + char * charWidth + 12
+    let x = preferredX
+    if (x + pickerWidth > window.innerWidth - viewportPadding) {
+      x = window.innerWidth - pickerWidth - viewportPadding
     }
+    if (x < viewportPadding) {
+      x = viewportPadding
+    }
+
+    const preferredY = rect.top + line * lineHeight + 8
+    let y = preferredY
+    if (y + pickerHeight > window.innerHeight - viewportPadding) {
+      y = rect.top - pickerHeight - 8
+    }
+    if (y < viewportPadding) {
+      y = viewportPadding
+    }
+
+    mentionPosition.value = { x, y }
   }
 
   if (triggerChar === '@') {
@@ -663,7 +684,7 @@ const getModeType = (mode: string) => {
 }
 
 .chat-header {
-  padding: 16px 24px;
+  padding: 12px 20px;
   background: white;
   border-bottom: 1px solid #e4e7ed;
   display: flex;
@@ -679,7 +700,7 @@ const getModeType = (mode: string) => {
 .messages-container {
   flex: 1;
   overflow-y: auto;
-  padding: 24px;
+  padding: 16px;
   min-height: 0;
 }
 
@@ -726,7 +747,7 @@ const getModeType = (mode: string) => {
 }
 
 .message-content {
-  max-width: 70%;
+  max-width: 78%;
   background: white;
   padding: 12px 16px;
   border-radius: 4px;
@@ -734,11 +755,11 @@ const getModeType = (mode: string) => {
 }
 
 .message.assistant .message-content {
-  max-width: 840px;
+  max-width: 980px;
 }
 
 .message.user .message-content {
-  max-width: 360px;
+  max-width: 520px;
 }
 
 .message.user .message-content {
@@ -766,12 +787,12 @@ const getModeType = (mode: string) => {
 
 .input-area {
   background: white;
-  padding: 16px 24px;
+  padding: 12px 20px;
   border-top: 1px solid #e4e7ed;
 }
 
 .input-wrapper {
-  max-width: 900px;
+  max-width: 1120px;
   margin: 0 auto;
 }
 
